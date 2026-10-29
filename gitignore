@@ -1,0 +1,17 @@
+# .NET
+**/bin/
+**/obj/
+
+# VS Code
+.vs/
+.vscode/
+
+# Ficheiros locais
+*.db
+*.db-shm
+*.db-wal
+.env
+appsettings.Development.json
+
+# Sistema operativo
+.DS_Store
