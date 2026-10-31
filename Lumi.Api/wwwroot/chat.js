@@ -23,6 +23,8 @@ function render() {
   if (chat) states.push("A gerar resposta");
   if (speech) states.push(speech.audio ? "A falar" : "A gerar áudio");
   status.textContent = states.join(" · ") || "Inativo";
+  status.hidden = states.length === 0;
+  stopButton.hidden = !speech?.audio;
   sendButton.disabled = !!chat || !!capture;
   micButton.disabled = !!chat || (!!capture && capture.state !== "A gravar");
   micButton.textContent = capture?.state === "A gravar" ? "Terminar gravação" : "🎙️";

@@ -25,6 +25,6 @@ omitted:
 
 Ferramenta pessoal de conversa em pt-PT. Preservar a página escura existente, mensagens discretas em azul/cinza e verde e controlos nativos. Não introduzir uma página de marketing nem uma biblioteca de componentes.
 
-O CSS em `Lumi.Api/wwwroot/chat.html` implementa os valores acima. Página com largura máxima de 650px, margem de 40px e fluxo natural do documento. O formulário adapta-se a ecrãs estreitos. Tipografia de sistema para títulos, conteúdo e controlos; sem fontes externas ou animações.
+O CSS em `Lumi.Api/wwwroot/chat.css` implementa os valores acima. Estrutura de conversação com altura de viewport dinâmica, largura máxima de 960px, cabeçalho compacto e compositor inferior sempre visíveis. Apenas a área de mensagens tem deslocação independente. O formulário adapta-se a ecrãs estreitos. Tipografia de sistema para títulos, conteúdo e controlos; sem fontes externas ou animações.
 
-Feedback textual, foco visível e estados desativados comunicam as ações disponíveis. Estado e erro têm espaço reservado. Scrollbars pertencem ao documento. Só existe este ecrã; não há um fluxo irmão para comparar.
+Feedback textual, foco visível e estados desativados comunicam as ações disponíveis. O estado surge discretamente apenas durante atividade. O cancelamento fica junto ao campo durante captura/transcrição; parar voz surge durante reprodução. A área de atividade reserva uma linha para evitar saltos no campo. Scrollbars pertencem à área de mensagens. Só existe este ecrã; não há um fluxo irmão para comparar.

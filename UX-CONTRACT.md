@@ -6,7 +6,7 @@ Fonte: requisitos da tarefa V0.1 e contratos dos endpoints em `Lumi.Api/Program.
 | --- | --- | --- | --- |
 | Formulário | `chat.js`: submit/render | Um envio por vez; captura bloqueia envio, reprodução não; preservar rascunho | `tests/chat.test.cjs` |
 | Feedback | `chat.js`: render/showError | Estado em região status e erro em alert; cancelamento voluntário silencioso | `tests/chat.test.cjs` |
-| Scrollbar | CSS global em `chat.html` | Visível, cores do documento, preferência forced-colors respeitada | Inspeção manual |
+| Scrollbar | CSS global em `chat.css` | Visível, cores do documento, preferência forced-colors respeitada | Inspeção manual |
 | Captura | `chat.js`: capture/transcribe | Cancelar liberta tracks e aborta pedido; transcrição acrescenta ao texto atual | `tests/chat.test.cjs` |
 | Reprodução | `chat.js`: speech/stopSpeech | Uma reprodução; desligar/parar aborta síntese e liberta URL; nova resposta substitui anterior | `tests/chat.test.cjs` |
 | Sessão | `chat.js`: newChat | Abortar pedidos antigos e ignorar conclusões atrasadas; preservar rascunho | `tests/chat.test.cjs` |
