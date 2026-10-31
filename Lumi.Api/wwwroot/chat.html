@@ -62,16 +62,97 @@
 
     <div id="messages"></div>
 
-    <form id="chatForm">
-      <input id="messageInput" placeholder="Fala com a Lumi..." required />
-      <button type="submit">Enviar</button>
-    </form>
+ <form id="chatForm">
+  <input id="messageInput" placeholder="Fala com a Lumi..." required />
+  <button type="button" id="micButton" aria-label="Gravar áudio">
+    🎙️
+  </button>
+  <button type="submit">Enviar</button>
+</form>
 
     <script>
       const form = document.querySelector("#chatForm");
       const input = document.querySelector("#messageInput");
       const messages = document.querySelector("#messages");
       const button = form.querySelector("button");
+
+const micButton = document.querySelector("#micButton");
+
+let mediaRecorder = null;
+let audioChunks = [];
+let audioStream = null;
+let isTranscribing = false;
+
+micButton.addEventListener("click", async () => {
+  if (isTranscribing) return;
+
+  // Parar a gravação
+  if (mediaRecorder?.state === "recording") {
+    mediaRecorder.stop();
+    micButton.textContent = "A processar...";
+    micButton.disabled = true;
+    return;
+  }
+
+  try {
+    audioStream = await navigator.mediaDevices.getUserMedia({
+      audio: true,
+    });
+
+    audioChunks = [];
+
+    mediaRecorder = new MediaRecorder(audioStream);
+
+    mediaRecorder.addEventListener("dataavailable", (event) => {
+      if (event.data.size > 0) {
+        audioChunks.push(event.data);
+      }
+    });
+
+    mediaRecorder.addEventListener("stop", async () => {
+      isTranscribing = true;
+      audioStream?.getTracks().forEach((track) => track.stop());
+
+      try {
+        const audioBlob = new Blob(audioChunks, {
+          type: mediaRecorder.mimeType,
+        });
+
+        const formData = new FormData();
+        formData.append("audio", audioBlob, "recording.webm");
+
+        const response = await fetch("/audio/transcribe", {
+          method: "POST",
+          body: formData,
+        });
+
+        if (!response.ok) {
+          throw new Error("Erro ao transcrever áudio");
+        }
+
+        const result = await response.json();
+
+        input.value = result.text;
+        input.focus();
+      } catch (error) {
+        console.error(error);
+        alert("Não foi possível transcrever o áudio.");
+      } finally {
+        isTranscribing = false;
+        micButton.disabled = false;
+        micButton.textContent = "🎙️";
+        mediaRecorder = null;
+      }
+    });
+
+    mediaRecorder.start();
+    micButton.textContent = "⏹️";
+  } catch (error) {
+    console.error(error);
+    audioStream?.getTracks().forEach((track) => track.stop());
+    alert("Não foi possível aceder ao microfone.");
+  }
+});
 
       function addMessage(content, role) {
         const element = document.createElement("div");
