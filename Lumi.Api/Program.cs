@@ -7,7 +7,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddSingleton<TranscriptionService>();
-
+builder.Services.AddSingleton<ISpeechService, PiperSpeechService>();
 builder.Services.AddHttpClient("Ollama", client =>
 {
     client.BaseAddress = new Uri(
@@ -91,6 +91,24 @@ app.MapPost("/audio/transcribe", async (
 })
 .DisableAntiforgery();
 
+
+app.MapPost("/audio/speak", async (
+    SpeakRequest request,
+    ISpeechService speechService,
+    CancellationToken cancellationToken) =>
+{
+    if (string.IsNullOrWhiteSpace(request.Text))
+        return Results.BadRequest("O texto não pode estar vazio.");
+
+    var audio = await speechService.SynthesizeAsync(
+        request.Text,
+        cancellationToken
+    );
+
+    return Results.File(audio, "audio/wav");
+});
+
+
 app.Run();
 
 
@@ -99,3 +117,5 @@ app.Run();
 record ChatRequest(string Message);
 
 record StreamChatRequest(string SessionId, string Message);
+
+record SpeakRequest(string Text);

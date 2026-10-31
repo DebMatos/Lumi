@@ -58,101 +58,112 @@
     <header>
       <h1>Lumi</h1>
       <button id="newChat" type="button">Nova conversa</button>
+      <button id="voiceToggle" type="button" aria-pressed="false">
+        Voz desligada
+      </button>
     </header>
 
     <div id="messages"></div>
 
- <form id="chatForm">
-  <input id="messageInput" placeholder="Fala com a Lumi..." required />
-  <button type="button" id="micButton" aria-label="Gravar áudio">
-    🎙️
-  </button>
-  <button type="submit">Enviar</button>
-</form>
+    <form id="chatForm">
+      <input id="messageInput" placeholder="Fala com a Lumi..." required />
+      <button type="button" id="micButton" aria-label="Gravar áudio">🎙️</button>
+      <button type="submit">Enviar</button>
+    </form>
 
     <script>
       const form = document.querySelector("#chatForm");
       const input = document.querySelector("#messageInput");
       const messages = document.querySelector("#messages");
       const button = form.querySelector("button");
+      const voiceToggle = document.querySelector("#voiceToggle");
+      let voiceEnabled = false;
 
-const micButton = document.querySelector("#micButton");
+      voiceToggle.addEventListener("click", () => {
+        voiceEnabled = !voiceEnabled;
 
-let mediaRecorder = null;
-let audioChunks = [];
-let audioStream = null;
-let isTranscribing = false;
+        voiceToggle.textContent = voiceEnabled ? "Voz ligada" : "Voz desligada";
 
-micButton.addEventListener("click", async () => {
-  if (isTranscribing) return;
+        voiceToggle.setAttribute("aria-pressed", String(voiceEnabled));
+      });
 
-  // Parar a gravação
-  if (mediaRecorder?.state === "recording") {
-    mediaRecorder.stop();
-    micButton.textContent = "A processar...";
-    micButton.disabled = true;
-    return;
-  }
+      const micButton = document.querySelector("#micButton");
 
-  try {
-    audioStream = await navigator.mediaDevices.getUserMedia({
-      audio: true,
-    });
+      let mediaRecorder = null;
+      let audioChunks = [];
+      let audioStream = null;
+      let isTranscribing = false;
 
-    audioChunks = [];
+      micButton.addEventListener("click", async () => {
+        if (isTranscribing) return;
 
-    mediaRecorder = new MediaRecorder(audioStream);
-
-    mediaRecorder.addEventListener("dataavailable", (event) => {
-      if (event.data.size > 0) {
-        audioChunks.push(event.data);
-      }
-    });
-
-    mediaRecorder.addEventListener("stop", async () => {
-      isTranscribing = true;
-      audioStream?.getTracks().forEach((track) => track.stop());
-
-      try {
-        const audioBlob = new Blob(audioChunks, {
-          type: mediaRecorder.mimeType,
-        });
-
-        const formData = new FormData();
-        formData.append("audio", audioBlob, "recording.webm");
-
-        const response = await fetch("/audio/transcribe", {
-          method: "POST",
-          body: formData,
-        });
-
-        if (!response.ok) {
-          throw new Error("Erro ao transcrever áudio");
+        // Parar a gravação
+        if (mediaRecorder?.state === "recording") {
+          mediaRecorder.stop();
+          micButton.textContent = "A processar...";
+          micButton.disabled = true;
+          return;
         }
 
-        const result = await response.json();
+        try {
+          audioStream = await navigator.mediaDevices.getUserMedia({
+            audio: true,
+          });
 
-        input.value = result.text;
-        input.focus();
-      } catch (error) {
-        console.error(error);
-        alert("Não foi possível transcrever o áudio.");
-      } finally {
-        isTranscribing = false;
-        micButton.disabled = false;
-        micButton.textContent = "🎙️";
-        mediaRecorder = null;
-      }
-    });
+          audioChunks = [];
 
-    mediaRecorder.start();
-    micButton.textContent = "⏹️";
-  } catch (error) {
-    console.error(error);
-    audioStream?.getTracks().forEach((track) => track.stop());
-    alert("Não foi possível aceder ao microfone.");
-  }
-});
+          mediaRecorder = new MediaRecorder(audioStream);
+
+          mediaRecorder.addEventListener("dataavailable", (event) => {
+            if (event.data.size > 0) {
+              audioChunks.push(event.data);
+            }
+          });
+
+          mediaRecorder.addEventListener("stop", async () => {
+            isTranscribing = true;
+            audioStream?.getTracks().forEach((track) => track.stop());
+
+            try {
+              const audioBlob = new Blob(audioChunks, {
+                type: mediaRecorder.mimeType,
+              });
+
+              const formData = new FormData();
+              formData.append("audio", audioBlob, "recording.webm");
+
+              const response = await fetch("/audio/transcribe", {
+                method: "POST",
+                body: formData,
+              });
+
+              if (!response.ok) {
+                throw new Error("Erro ao transcrever áudio");
+              }
+
+              const result = await response.json();
+
+              input.value = result.text;
+              input.focus();
+            } catch (error) {
+              console.error(error);
+              alert("Não foi possível transcrever o áudio.");
+            } finally {
+              isTranscribing = false;
+              micButton.disabled = false;
+              micButton.textContent = "🎙️";
+              mediaRecorder = null;
+            }
+          });
+
+          mediaRecorder.start();
+          micButton.textContent = "⏹️";
+        } catch (error) {
+          console.error(error);
+          audioStream?.getTracks().forEach((track) => track.stop());
+          alert("Não foi possível aceder ao microfone.");
+        }
+      });
 
       function addMessage(content, role) {
         const element = document.createElement("div");
@@ -202,6 +213,15 @@ micButton.addEventListener("click", async () => {
           const reader = response.body.getReader();
           const decoder = new TextDecoder();
 
+     reply.textContent += decoder.decode();
+
+if (voiceEnabled && reply.textContent.trim()) {
+  try {
+    await speakText(reply.textContent);
+  } catch (error) {
+    console.error("Erro ao reproduzir a voz:", error);
+  }
+}
           while (true) {
             const { done, value } = await reader.read();
 
@@ -213,6 +233,13 @@ micButton.addEventListener("click", async () => {
 
             reply.scrollIntoView({ block: "end" });
           }
+          if (voiceEnabled && reply.textContent.trim()) {
+            try {
+              await speakText(reply.textContent);
+            } catch (error) {
+              console.error("Erro ao reproduzir a voz:", error);
+            }
+          }
 
           reply.textContent += decoder.decode();
         } catch (error) {
@@ -223,6 +250,34 @@ micButton.addEventListener("click", async () => {
           input.focus();
         }
       });
+
+      async function speakText(text) {
+        if (!text.trim()) return;
+
+        const response = await fetch("/audio/speak", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text }),
+        });
+
+        if (!response.ok) {
+          throw new Error("Não foi possível gerar a voz.");
+        }
+
+        const audioBlob = await response.blob();
+        const audioUrl = URL.createObjectURL(audioBlob);
+        const audio = new Audio(audioUrl);
+
+        try {
+          await new Promise((resolve, reject) => {
+            audio.onended = resolve;
+            audio.onerror = () => reject(new Error("Erro de reprodução."));
+            audio.play().catch(reject);
+          });
+        } finally {
+          URL.revokeObjectURL(audioUrl);
+        }
+      }
     </script>
   </body>
 </html>
