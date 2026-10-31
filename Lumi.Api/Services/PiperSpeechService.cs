@@ -1,82 +1,40 @@
-
-using System.Diagnostics;
+using Microsoft.Extensions.Options;
 
 namespace Lumi.Api.Services;
 
-public class PiperSpeechService : ISpeechService
+public class PiperSpeechService(IOptions<SpeechOptions> options) : ISpeechService
 {
-    private readonly string _piperPath;
-    private readonly string _modelPath;
+    private readonly SpeechOptions _options = options.Value;
 
-    public PiperSpeechService(IConfiguration configuration)
+    public async Task<byte[]> SynthesizeAsync(string text, CancellationToken cancellationToken = default)
     {
-        var home = Environment.GetFolderPath(
-            Environment.SpecialFolder.UserProfile);
-
-        _piperPath = configuration["Speech:PiperExecutable"]
-            ?? Path.Combine(home, "Projetos/piper/.venv/bin/piper");
-
-        _modelPath = configuration["Speech:ModelPath"]
-            ?? Path.Combine(home, "Projetos/piper/pt_PT-tugao-medium.onnx");
-    }
-
-    public async Task<byte[]> SynthesizeAsync(
-        string text,
-        CancellationToken cancellationToken = default)
-    {
-        if (string.IsNullOrWhiteSpace(text))
-            throw new ArgumentException("O texto não pode estar vazio.");
-
-        var outputPath = Path.Combine(
-            Path.GetTempPath(),
-            $"lumi-speech-{Guid.NewGuid():N}.wav");
-
+        VoiceValidation.Text(text, _options.MaxTextLength);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(_options.TimeoutSeconds));
+        var tempDir = Path.Combine(Path.GetTempPath(), $"lumi-speech-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        var outputPath = Path.Combine(tempDir, "speech.wav");
         try
         {
-            var startInfo = new ProcessStartInfo(_piperPath)
-            {
-                RedirectStandardInput = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false
-            };
-
-            startInfo.ArgumentList.Add("--model");
-            startInfo.ArgumentList.Add(_modelPath);
-            startInfo.ArgumentList.Add("--output_file");
-            startInfo.ArgumentList.Add(outputPath);
-
-            using var process = Process.Start(startInfo)
-                ?? throw new InvalidOperationException(
-                    "Não foi possível iniciar o Piper.");
-
-            var outputTask = process.StandardOutput.ReadToEndAsync(
-                cancellationToken);
-
-            var errorTask = process.StandardError.ReadToEndAsync(
-                cancellationToken);
-
-            await process.StandardInput.WriteLineAsync(
-                text.AsMemory(), cancellationToken);
-
-            process.StandardInput.Close();
-
-            await process.WaitForExitAsync(cancellationToken);
-
-            await outputTask;
-            var error = await errorTask;
-
-            if (process.ExitCode != 0)
-                throw new InvalidOperationException(
-                    $"Erro do Piper: {error}");
-
-            return await File.ReadAllBytesAsync(
-                outputPath, cancellationToken);
+            if (!OperatingSystem.IsWindows())
+                File.SetUnixFileMode(tempDir, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            // Piper treats lines as separate utterances; send one normalized utterance.
+            var utterance = text.Replace('\r', ' ').Replace('\n', ' ');
+            await VoiceProcess.RunAsync(_options.PiperExecutable, [
+                "--model", VoiceValidation.ExpandPath(_options.ModelPath), "--output_file", outputPath
+            ], utterance, timeout.Token);
+            var length = new FileInfo(outputPath).Length;
+            if (length < 44 || length > 32 * 1024 * 1024)
+                throw new InvalidOperationException("O serviço produziu áudio inválido.");
+            return await File.ReadAllBytesAsync(outputPath, timeout.Token);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new TimeoutException("A síntese excedeu o tempo limite.");
         }
         finally
         {
-            if (File.Exists(outputPath))
-                File.Delete(outputPath);
+            Directory.Delete(tempDir, recursive: true);
         }
     }
 }
