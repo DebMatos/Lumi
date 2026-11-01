@@ -2,6 +2,8 @@
 using System.Net.Http.Json;
 using Lumi.Api.Services;
 using Microsoft.AspNetCore.Http.Features;
+using Lumi.Api.Data;
+using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -38,7 +40,10 @@ builder.Services.AddHttpClient("Ollama", client =>
 });
 
 builder.Services.AddSingleton<ChatService>();
+builder.Services.AddDbContext<LumiDbContext>(options =>
+    options.UseSqlite("Data Source=lumi.db"));
 
+    
 var app = builder.Build();
 
 // Local-only V0.1: reject remote peers and browser requests from other origins.

@@ -15,3 +15,8 @@ appsettings.Development.json
 
 # Sistema operativo
 .DS_Store
+
+# SQLite
+*.db
+*.db-shm
+*.db-wal
