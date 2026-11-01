@@ -1,4 +1,6 @@
 using Lumi.Api.Services;
+using Lumi.Api.Data;
+using Microsoft.EntityFrameworkCore;
 
 namespace Lumi.Api.Endpoints;
 
@@ -47,6 +49,36 @@ public static class ChatEndpoints
             return Results.Empty;
         });
 
+        app.MapGet("/conversations/{id}/messages", async (
+            string id,
+            LumiDbContext db,
+            CancellationToken cancellationToken) =>
+        {
+            if (!Guid.TryParse(id, out var conversationId))
+                return Results.BadRequest();
+
+            var exists = await db.Conversations
+                .AnyAsync(c => c.Id == conversationId, cancellationToken);
+
+            if (!exists)
+                return Results.NotFound();
+
+            var messages = await db.Messages
+                .AsNoTracking()
+                .Where(m => m.ConversationId == conversationId)
+                .OrderBy(m => m.CreatedAt)
+                .ThenBy(m => m.Id)
+                .Select(m => new
+                {
+                    m.Id,
+                    m.Role,
+                    m.Content,
+                    m.CreatedAt
+                })
+                .ToListAsync(cancellationToken);
+
+            return Results.Ok(messages);
+        });
         return app;
     }
 }

@@ -188,6 +188,48 @@ function addMessage(content, role) {
   messages.appendChild(element);
   return element;
 }
+
+async function loadConversationHistory() {
+  const currentSessionId = sessionId;
+
+  try {
+    const response = await fetch(
+      `/conversations/${currentSessionId}/messages`
+    );
+
+    // Uma conversa nova ainda não existe no SQLite.
+    if (response.status === 404) return;
+
+    if (!response.ok) {
+      throw new Error("Failed to load conversation history");
+    }
+
+    const history = await response.json();
+
+    // Evitar apresentar mensagens de outra sessão.
+    if (sessionId !== currentSessionId) return;
+
+    messages.replaceChildren();
+
+    for (const item of history) {
+      if (item.role === "user" || item.role === "assistant") {
+        addMessage(
+          item.content,
+          item.role === "assistant" ? "lumi" : "user"
+        );
+      }
+    }
+
+    messages.lastElementChild?.scrollIntoView({
+      block: "end"
+    });
+  } catch (error) {
+    if (sessionId === currentSessionId) {
+      showError("Não foi possível recuperar o histórico da conversa.");
+    }
+  }
+}
+
 document.querySelector("#newChat").addEventListener("click", () => {
   const oldChat = chat;
   chat = null;
@@ -204,6 +246,7 @@ document.querySelector("#newChat").addEventListener("click", () => {
   render();
   input.focus();
 });
+
 form.addEventListener("submit", async event => {
   event.preventDefault();
   if (chat || capture || event.isComposing) return;
@@ -404,3 +447,5 @@ async function prepareSpeech(job) {
 }
 window.addEventListener("pagehide", () => { cancelCapture(); stopSpeech(); chat?.controller.abort(); });
 render();
+
+loadConversationHistory();
