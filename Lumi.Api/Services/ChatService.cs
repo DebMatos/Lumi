@@ -7,6 +7,9 @@ using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Collections.Concurrent;
 using System.Text;
+using Lumi.Api.Data;
+using Microsoft.EntityFrameworkCore;
+using Lumi.Api.Models;
 
 public class ChatService
 {
@@ -16,11 +19,15 @@ public class ChatService
     private readonly string _model;
 
     private const int MaxMessages = 20;
+
+    private readonly LumiDbContext _db;
     public ChatService(
       IHttpClientFactory httpClientFactory,
-      IConfiguration configuration)
+      IConfiguration configuration,
+      LumiDbContext db)
     {
         _client = httpClientFactory.CreateClient("Ollama");
+        _db = db;
 
         _model = configuration["Ollama:DefaultModel"]
             ?? throw new InvalidOperationException(
@@ -30,7 +37,7 @@ public class ChatService
     {
         var response = await _client.PostAsJsonAsync("/api/chat", new
         {
-model = _model,
+            model = _model,
             messages = new[]
             {
                 new { role = "user", content = message }
@@ -47,7 +54,28 @@ model = _model,
     }
 
 
+    private async Task<Conversation> GetOrCreateConversationAsync(
+    string sessionId,
+    CancellationToken cancellationToken)
+    {
+        var conversationId = Guid.Parse(sessionId);
 
+        var conversation = await _db.Conversations
+            .FindAsync([conversationId], cancellationToken);
+
+        if (conversation is not null)
+            return conversation;
+
+        conversation = new Conversation
+        {
+            Id = conversationId
+        };
+
+        _db.Conversations.Add(conversation);
+        await _db.SaveChangesAsync(cancellationToken);
+
+        return conversation;
+    }
     public async IAsyncEnumerable<string> StreamMessageAsync(
         string sessionId,
         string message,
@@ -58,12 +86,26 @@ model = _model,
             _ => new ChatSession()
         );
 
+        var conversation = await GetOrCreateConversationAsync(
+                   sessionId,
+                   cancellationToken
+               );
+
         await session.Lock.WaitAsync(cancellationToken);
 
         try
         {
-            // Recuperar o histórico e adicionar a nova mensagem
-            var messages = session.Messages
+            var history = await _db.Messages
+           .AsNoTracking()
+           .Where(m => m.ConversationId == conversation.Id)
+           .OrderByDescending(m => m.CreatedAt)
+           .ThenByDescending(m => m.Id)
+           .Take(MaxMessages)
+           .ToListAsync(cancellationToken);
+
+            var messages = history
+                .AsEnumerable()
+                .Reverse()
                 .Select(m => new { role = m.Role, content = m.Content })
                 .ToList();
 
@@ -123,27 +165,29 @@ model = _model,
                 }
             }
 
-            // Só guardar depois de receber a resposta completa
-            session.Messages.Add(new ChatMessage("user", message));
-            session.Messages.Add(
-                new ChatMessage("assistant", reply.ToString())
+            // Guardar a interação após a resposta completa
+            _db.Messages.AddRange(
+                new Message
+                {
+                    ConversationId = conversation.Id,
+                    Role = "user",
+                    Content = message
+                },
+                new Message
+                {
+                    ConversationId = conversation.Id,
+                    Role = "assistant",
+                    Content = reply.ToString()
+                }
             );
 
-            // Manter apenas as últimas 10 interações
-            if (session.Messages.Count > MaxMessages)
-            {
-                session.Messages.RemoveRange(
-                    0,
-                    session.Messages.Count - MaxMessages
-                );
-            }
+            await _db.SaveChangesAsync(cancellationToken);
         }
         finally
         {
             session.Lock.Release();
         }
     }
-
 }
 
 public class ChatSession

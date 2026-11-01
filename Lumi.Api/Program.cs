@@ -39,7 +39,7 @@ builder.Services.AddHttpClient("Ollama", client =>
     );
 });
 
-builder.Services.AddSingleton<ChatService>();
+builder.Services.AddScoped<ChatService>();
 builder.Services.AddDbContext<LumiDbContext>(options =>
     options.UseSqlite("Data Source=lumi.db"));
 

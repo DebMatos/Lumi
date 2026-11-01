@@ -13,8 +13,13 @@ let voiceEnabled = false;
 let capture = null;
 let speech = null;
 let chat = null;
-let sessionId = sessionStorage.getItem("lumi-session") || crypto.randomUUID();
-sessionStorage.setItem("lumi-session", sessionId);
+let sessionId =
+  localStorage.getItem("lumi-session") ||
+  sessionStorage.getItem("lumi-session") ||
+  crypto.randomUUID();
+
+localStorage.setItem("lumi-session", sessionId);
+sessionStorage.removeItem("lumi-session");
 
 // Independent jobs can coexist: speaking never disables writing or submitting.
 function render() {
