@@ -129,6 +129,10 @@ with tempfile.TemporaryDirectory(prefix='lumi-http-') as temp:
             result = json_post(port, '/chat', {'message': 'olá'})
             check(result[0] == 200 and json.loads(result[2])['reply'] == 'resposta de teste', '/chat compatible')
             session_id = str(uuid.uuid4())
+            check(request(port, f'/conversations/{session_id}/messages', method='GET')[0] == 404,
+                  'new conversation history returns 404')
+            check(request(port, '/conversations/not-a-guid/messages', method='GET')[0] == 400,
+                  'invalid history session ID returns 400')
             connection = http.client.HTTPConnection('127.0.0.1', port, timeout=10)
             try:
                 connection.request('POST', '/chat/stream', json.dumps({'message': 'olá', 'sessionId': session_id}),
@@ -147,6 +151,14 @@ with tempfile.TemporaryDirectory(prefix='lumi-http-') as temp:
                 rows = database.execute('SELECT Role, Content FROM Messages ORDER BY Role').fetchall()
                 check(rows == [('assistant', 'resposta de teste'), ('user', 'olá')],
                       'complete streamed interaction persisted in isolated SQLite')
+            result = request(port, f'/conversations/{session_id}/messages', method='GET')
+            saved_history = json.loads(result[2])
+            check(result[0] == 200 and [(item['role'], item['content']) for item in saved_history]
+                  == [('user', 'olá'), ('assistant', 'resposta de teste')], 'history endpoint restores messages in order')
+            check(all(set(item) == {'id', 'role', 'content', 'createdAt'} for item in saved_history),
+                  'history endpoint response contract')
+            result = request(port, f'/conversations/{session_id}/messages', method='GET')
+            check(json.loads(result[2]) == saved_history, 'repeated history reads do not duplicate messages')
             result = json_post(port, '/chat/stream', {'message': 'continua', 'sessionId': session_id})
             check(result[0] == 200 and result[2].decode() == 'resposta de teste', 'same session streams a follow-up')
             check(Ollama.payloads[-1]['messages'] == [

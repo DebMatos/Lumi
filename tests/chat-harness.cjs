@@ -12,7 +12,7 @@ function createStorage() {
     clear() { items.clear(); }
   };
 }
-function setup({ sourcePath = "Lumi.Api/wwwroot/chat.js", onPlay = () => {},
+async function setup({ sourcePath = "Lumi.Api/wwwroot/chat.js", onPlay = () => {}, pendingHistory = false,
   localStorage = createStorage(), sessionStorage = createStorage() } = {}) {
   class Element {
     constructor() { this.value=''; this.textContent=''; this.disabled=false; this.children=[]; this.events={}; }
@@ -24,7 +24,7 @@ function setup({ sourcePath = "Lumi.Api/wwwroot/chat.js", onPlay = () => {},
   }
   const elements = {};
   const get = id => elements[id] ||= new Element();
-  const requests=[], audios=[], revoked=[], recorders=[], tracks=[];
+  const requests=[], historyRequests=[], audios=[], revoked=[], recorders=[], tracks=[];
   let permission;
   class Recorder {
     static isTypeSupported() { return true; }
@@ -44,13 +44,22 @@ function setup({ sourcePath = "Lumi.Api/wwwroot/chat.js", onPlay = () => {},
     MediaRecorder:Recorder,
     localStorage, sessionStorage,
     crypto:{randomUUID:require('node:crypto').randomUUID},
-    fetch:(url, options) => {const d=deferred(); requests.push({url,options,...d}); return d.promise;},
+    fetch:(url, options) => {
+      const d=deferred();
+      if (url.startsWith('/conversations/')) {
+        historyRequests.push({url,options,...d});
+        if (!pendingHistory) d.resolve({ok:false,status:404});
+      } else requests.push({url,options,...d});
+      return d.promise;
+    },
     Audio:class {constructor(url){this.url=url;audios.push(this);} play(){onPlay(this);return Promise.resolve();} pause(){this.paused=true;} removeAttribute(){} load(){}},
     URL:{createObjectURL:()=>`blob:${audios.length}`,revokeObjectURL:url=>revoked.push(url)},
     AbortController, Blob, FormData, TextDecoder, DOMException, console, setTimeout, clearTimeout
   });
   vm.runInContext(fs.readFileSync(sourcePath,'utf8'),context);
-  return {get,requests,audios,revoked,recorders,tracks,context,localStorage,sessionStorage,setPermission:d=>permission=d};
+  // Let the default initial 404 settle before interaction-focused tests run.
+  await new Promise(resolve => setImmediate(resolve));
+  return {get,requests,historyRequests,audios,revoked,recorders,tracks,context,localStorage,sessionStorage,setPermission:d=>permission=d};
 }
 function streamed(text) {
   return {ok:true,body:{getReader(){let read=false;return {async read(){if(read)return{done:true};read=true;return{done:false,value:new TextEncoder().encode(text)};},releaseLock(){}};}}};

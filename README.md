@@ -39,6 +39,7 @@ Antes de expor a API na rede: autenticação e autorização (incluindo isolamen
 dotnet build Lumi.Api/Lumi.Api.csproj
 dotnet run --project tests/Lumi.Voice.Tests
 node tests/chat.test.cjs
+node tests/history.test.cjs
 node tests/incremental-voice.test.cjs
 PYTHONDONTWRITEBYTECODE=1 python3 tests/test_piper_worker.py
 node tests/voice_latency.cjs
