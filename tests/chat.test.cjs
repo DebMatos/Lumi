@@ -9,7 +9,58 @@ test('HTML wires the tested script and controls', () => {
     assert.ok(html.includes(`id="${id}"`), id);
   assert.match(html, /<form[^>]*novalidate/);
 });
-const { setup, deferred, streamed, reply } = require('./chat-harness.cjs');
+const { setup, createStorage, deferred, streamed, reply } = require('./chat-harness.cjs');
+test('session ID persists after a new browser session with fresh sessionStorage', async () => {
+  const first = setup();
+  await reply(first);
+  const originalId = JSON.parse(first.requests[0].options.body).sessionId;
+  assert.match(originalId, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+  assert.equal(first.localStorage.getItem('lumi-session'), originalId);
+  first.sessionStorage.setItem('browser-session-only', 'old');
+
+  const reopened = setup({ localStorage: first.localStorage });
+  assert.equal(reopened.sessionStorage.getItem('browser-session-only'), null);
+  await reply(reopened);
+  assert.equal(JSON.parse(reopened.requests[0].options.body).sessionId, originalId);
+  assert.notEqual(setup().localStorage.getItem('lumi-session'), originalId);
+});
+test('legacy sessionStorage ID migrates to localStorage and survives a new browser session', async () => {
+  const legacyId = '11776f6c-f3e4-4501-b1c3-8923141869cb';
+  const sessionStorage = createStorage();
+  sessionStorage.setItem('lumi-session', legacyId);
+  sessionStorage.setItem('unrelated', 'keep');
+  const first = setup({ sessionStorage });
+  await reply(first);
+  assert.equal(JSON.parse(first.requests[0].options.body).sessionId, legacyId);
+  assert.equal(sessionStorage.getItem('lumi-session'), null);
+  assert.equal(sessionStorage.getItem('unrelated'), 'keep');
+  assert.equal(first.localStorage.getItem('lumi-session'), legacyId);
+
+  const reopened = setup({ localStorage: first.localStorage });
+  await reply(reopened);
+  assert.equal(JSON.parse(reopened.requests[0].options.body).sessionId, legacyId);
+});
+test('new conversation remains active after reloading and reopening the browser', async () => {
+  const sessionStorage = createStorage();
+  sessionStorage.setItem('lumi-session', '11776f6c-f3e4-4501-b1c3-8923141869cb');
+  const first = setup({ sessionStorage });
+  const originalId = first.localStorage.getItem('lumi-session');
+  first.get('#newChat').fire('click');
+  await reply(first);
+  const newId = JSON.parse(first.requests[0].options.body).sessionId;
+  assert.notEqual(newId, originalId);
+  assert.match(newId, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+  assert.equal(first.localStorage.getItem('lumi-session'), newId);
+  assert.equal(first.sessionStorage.getItem('lumi-session'), null);
+
+  const reloaded = setup({ localStorage: first.localStorage, sessionStorage: first.sessionStorage });
+  await reply(reloaded);
+  assert.equal(JSON.parse(reloaded.requests[0].options.body).sessionId, newId);
+
+  const reopened = setup({ localStorage: first.localStorage });
+  await reply(reopened);
+  assert.equal(JSON.parse(reopened.requests[0].options.body).sessionId, newId);
+});
 test('chat unlocks during synthesis; playback replacement and voice off release resources',async()=>{
   const h=setup();h.get('#voiceToggle').fire('click');
   await reply(h);

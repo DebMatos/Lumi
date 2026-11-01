@@ -16,9 +16,10 @@ root = Path(__file__).resolve().parents[1]
 with socket.socket() as sock:
     sock.bind(('127.0.0.1', 0))
     port = sock.getsockname()[1]
-with tempfile.TemporaryFile(mode='w+') as log:
+with tempfile.TemporaryDirectory(prefix='lumi-voice-pauses-') as temp, tempfile.TemporaryFile(mode='w+') as log:
     server = subprocess.Popen(['dotnet', str(root / 'Lumi.Api/bin/Debug/net10.0/Lumi.Api.dll'),
-                               '--urls', f'http://127.0.0.1:{port}'], cwd=root / 'Lumi.Api',
+                               '--urls', f'http://127.0.0.1:{port}',
+                               '--contentRoot', str(root / 'Lumi.Api')], cwd=temp,
                               env=dict(os.environ, ASPNETCORE_ENVIRONMENT='Production'), stdout=log, stderr=log)
     try:
         for _ in range(100):

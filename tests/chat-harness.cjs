@@ -1,7 +1,19 @@
 const vm = require('node:vm');
 const fs = require('node:fs');
 function deferred() { let resolve, reject; const promise = new Promise((a,b) => { resolve=a; reject=b; }); return { promise, resolve, reject }; }
-function setup({ sourcePath = "Lumi.Api/wwwroot/chat.js", onPlay = () => {} } = {}) {
+function createStorage() {
+  const items = new Map();
+  return {
+    get length() { return items.size; },
+    key(index) { return [...items.keys()][index] ?? null; },
+    getItem(key) { return items.get(String(key)) ?? null; },
+    setItem(key, value) { items.set(String(key), String(value)); },
+    removeItem(key) { items.delete(String(key)); },
+    clear() { items.clear(); }
+  };
+}
+function setup({ sourcePath = "Lumi.Api/wwwroot/chat.js", onPlay = () => {},
+  localStorage = createStorage(), sessionStorage = createStorage() } = {}) {
   class Element {
     constructor() { this.value=''; this.textContent=''; this.disabled=false; this.children=[]; this.events={}; }
     addEventListener(name, fn) { this.events[name]=fn; }
@@ -30,7 +42,7 @@ function setup({ sourcePath = "Lumi.Api/wwwroot/chat.js", onPlay = () => {} } = 
       return Promise.resolve({getTracks:()=>[track]});
     } } },
     MediaRecorder:Recorder,
-    sessionStorage:{getItem(){return null;},setItem(){}},
+    localStorage, sessionStorage,
     crypto:{randomUUID:require('node:crypto').randomUUID},
     fetch:(url, options) => {const d=deferred(); requests.push({url,options,...d}); return d.promise;},
     Audio:class {constructor(url){this.url=url;audios.push(this);} play(){onPlay(this);return Promise.resolve();} pause(){this.paused=true;} removeAttribute(){} load(){}},
@@ -38,7 +50,7 @@ function setup({ sourcePath = "Lumi.Api/wwwroot/chat.js", onPlay = () => {} } = 
     AbortController, Blob, FormData, TextDecoder, DOMException, console, setTimeout, clearTimeout
   });
   vm.runInContext(fs.readFileSync(sourcePath,'utf8'),context);
-  return {get,requests,audios,revoked,recorders,tracks,context,setPermission:d=>permission=d};
+  return {get,requests,audios,revoked,recorders,tracks,context,localStorage,sessionStorage,setPermission:d=>permission=d};
 }
 function streamed(text) {
   return {ok:true,body:{getReader(){let read=false;return {async read(){if(read)return{done:true};read=true;return{done:false,value:new TextEncoder().encode(text)};},releaseLock(){}};}}};
@@ -50,4 +62,4 @@ async function reply(h,text='Olá') {
   await done;
 }
 
-module.exports = { setup, deferred, streamed, reply };
+module.exports = { setup, createStorage, deferred, streamed, reply };

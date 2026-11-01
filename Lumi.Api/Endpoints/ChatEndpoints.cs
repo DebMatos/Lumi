@@ -21,7 +21,7 @@ public static class ChatEndpoints
             ChatService chatService,
             HttpContext context) =>
         {
-            if (string.IsNullOrWhiteSpace(request.SessionId) ||
+            if (!Guid.TryParse(request.SessionId, out _) ||
                 string.IsNullOrWhiteSpace(request.Message))
             {
                 return Results.BadRequest();

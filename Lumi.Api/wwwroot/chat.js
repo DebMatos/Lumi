@@ -196,7 +196,8 @@ document.querySelector("#newChat").addEventListener("click", () => {
   cancelCapture();
   stopSpeech();
   sessionId = crypto.randomUUID();
-  sessionStorage.setItem("lumi-session", sessionId);
+  localStorage.setItem("lumi-session", sessionId);
+  sessionStorage.removeItem("lumi-session");
   messages.replaceChildren();
   // Keep the draft; late completions may not change this session or its UI.
   showError("");

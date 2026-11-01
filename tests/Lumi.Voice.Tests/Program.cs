@@ -1,8 +1,23 @@
 using System.Diagnostics;
 using System.Text;
+using Lumi.Api.Data;
 using Lumi.Api.Services;
 using Microsoft.AspNetCore.Http;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+
+// Prepare an isolated HTTP fixture using the application's existing migrations.
+if (args is ["--prepare-database", var databasePath])
+{
+    var connection = new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder
+    {
+        DataSource = Path.GetFullPath(databasePath)
+    };
+    await using var database = new LumiDbContext(new DbContextOptionsBuilder<LumiDbContext>()
+        .UseSqlite(connection.ToString()).Options);
+    await database.Database.MigrateAsync();
+    return;
+}
 
 static void Check(bool condition, string name)
 {

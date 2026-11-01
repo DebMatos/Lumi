@@ -51,6 +51,10 @@ O executável de testes .NET não requer um framework adicional. Testa limites, 
 
 Os testes HTTP iniciam a API e um Ollama simulado em portas loopback temporárias, sem usar os modelos instalados. A opção `--browser` requer `google-chrome` e Node 24: verifica DOM e reprodução de WAV no Chrome headless, com respostas de rede simuladas e autoplay permitido. O perfil temporário é removido; capturas de 320px e 1280px ficam em `/tmp/lumi-320.png` e `/tmp/lumi-1280.png`. O Chrome de teste usa `--no-sandbox` apenas para esta página local controlada; não usar este comando para navegar em sites externos.
 
+O harness JS mantém `localStorage` e `sessionStorage` separados e permite simular a reabertura do navegador partilhando apenas `localStorage`. Os testes HTTP e de latência real usam SQLite num diretório temporário, preparado pelas migrations existentes através do executável de testes .NET; a API arranca nesse diretório e mantém o content root original para configuração e ficheiros estáticos. Os três scripts Python que arrancam a API usam diretórios temporários, removidos após o encerramento, sem escrever na base de desenvolvimento.
+
+O teste HTTP exige 400 para um `sessionId` que não seja GUID. Os testes JS confirmam também que «Nova conversa» guarda o novo UUID em `localStorage`, mantendo-o ativo após recarregar a página ou reabrir o navegador, e preserva a migração anterior de `sessionStorage`.
+
 ## Testes manuais no navegador
 
 1. Em localhost, gravar, terminar, confirmar texto acrescentado ao rascunho e enviar. Confirmar resposta em streaming e início da voz assim que chega a primeira frase completa.
