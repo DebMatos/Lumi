@@ -1,4 +1,5 @@
 """Linux HTTP contracts with fake voice engines/Ollama; no model downloads."""
+from concurrent.futures import ThreadPoolExecutor
 import http.client
 import http.server
 import json
@@ -73,9 +74,6 @@ with tempfile.TemporaryDirectory(prefix='lumi-http-') as temp:
         wav.setsampwidth(2)
         wav.setframerate(16000)
         wav.writeframes(bytes(6400))
-    fake_piper = folder / 'piper'
-    fake_piper.write_text('#!/bin/sh\nread text\ncase "$text" in timeout) sleep 10;; failure) echo private-detail >&2; exit 7;; esac\ncp "$2" "$4"\n')
-    fake_piper.chmod(0o700)
     fake_whisper = folder / 'whisper'
     fake_whisper.write_text('#!/bin/sh\necho "transcrição de teste"\n')
     fake_whisper.chmod(0o700)
@@ -85,7 +83,8 @@ with tempfile.TemporaryDirectory(prefix='lumi-http-') as temp:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
     env = dict(os.environ, ASPNETCORE_ENVIRONMENT='Production',
-               Speech__PiperExecutable=str(fake_piper), Speech__ModelPath=str(fixture), Speech__TimeoutSeconds='1',
+               Speech__PythonExecutable=sys.executable, Speech__WorkerScript=str(ROOT / 'tests/fixtures/fake_piper_worker.py'),
+               Speech__ModelPath=str(fixture), Speech__TimeoutSeconds='3',
                Whisper__Executable=str(fake_whisper), Whisper__ModelPath=str(fixture),
                Ollama__BaseUrl=f'http://127.0.0.1:{ollama.server_port}')
     with (folder / 'server.log').open('w+') as log:
@@ -119,6 +118,27 @@ with tempfile.TemporaryDirectory(prefix='lumi-http-') as temp:
             result = json_post(port, '/audio/speak', {'text': 'failure'})
             check(result[0] == 503 and b'private-detail' not in result[2] and str(folder).encode() not in result[2], 'safe engine error HTTP')
             check(json_post(port, '/audio/speak', {'text': 'timeout'})[0] == 504, 'timeout HTTP')
+            check(json_post(port, '/audio/speak', {'text': 'after timeout'})[0] == 200, 'recovery after timeout HTTP')
+            check(json_post(port, '/audio/speak', {'text': 'crash'})[0] == 503, 'crashed worker HTTP')
+            check(json_post(port, '/audio/speak', {'text': 'after crash'})[0] == 200, 'recovery after crash HTTP')
+            barrier = threading.Barrier(8)
+            def simultaneous(_):
+                barrier.wait()
+                return json_post(port, '/audio/speak', {'text': 'delay:500'})[0]
+            with ThreadPoolExecutor(max_workers=8) as pool:
+                statuses = list(pool.map(simultaneous, range(8)))
+            check(statuses.count(200) >= 2 and 503 in statuses and set(statuses) <= {200, 503}, 'bounded HTTP queue accepts waiting requests without 429')
+            connection = http.client.HTTPConnection('127.0.0.1', port, timeout=5)
+            connection.request('POST', '/audio/speak', json.dumps({'text': 'hold'}), {'Content-Type': 'application/json'})
+            for _ in range(100):
+                events = Path(str(fixture) + '.events').read_text()
+                if '"text": "hold"' in events:
+                    break
+                time.sleep(.01)
+            else:
+                raise AssertionError('cancel fixture did not start')
+            connection.close()
+            check(json_post(port, '/audio/speak', {'text': 'after disconnect'})[0] == 200, 'HTTP disconnect cancels active worker and next request recovers')
             check(request(port, '/audio/speak', b'{}', {'Origin': 'http://external.example', 'Content-Type': 'application/json'})[0] == 403, 'cross-origin rejected')
             check(request(port, '/', headers={'Host': 'external.example'}, method='GET')[0] == 400, 'invalid Host rejected')
             check(request(port, '/', headers={'Sec-Fetch-Site': 'cross-site'}, method='GET')[0] == 403, 'cross-site rejected')

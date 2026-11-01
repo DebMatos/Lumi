@@ -50,25 +50,8 @@ try
     var output = await VoiceProcess.RunAsync("/bin/sh", ["-c", "head -c 100000 /dev/zero; head -c 100000 /dev/zero >&2"], null, default);
     Check(output.Length == 65536, "drain both pipes with bounded retention");
 
-    // Fake Piper verifies arguments/stdin, timeout, and temp directory removal without a model.
-    var fake = Path.Combine(root, "piper");
-    await File.WriteAllTextAsync(fake, "#!/bin/sh\nprintf '%s' \"$4\" > \"$2\"\nread text\ncase \"$text\" in timeout) sleep 10;; failure) exit 7;; esac\nhead -c 44 /dev/zero > \"$4\"\n");
-    File.SetUnixFileMode(fake, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
-    var pathRecord = Path.Combine(root, "output-path");
-    var service = new PiperSpeechService(Options.Create(new SpeechOptions { PiperExecutable = fake, ModelPath = pathRecord, TimeoutSeconds = 1 }));
-    Check((await service.SynthesizeAsync("olá")).Length == 44, "Piper successful response");
-    var generated = await File.ReadAllTextAsync(pathRecord);
-    Check(!Directory.Exists(Path.GetDirectoryName(generated)), "Piper success cleanup");
-    await Throws<InvalidOperationException>(() => service.SynthesizeAsync("failure"), "Piper failure");
-    generated = await File.ReadAllTextAsync(pathRecord);
-    Check(!Directory.Exists(Path.GetDirectoryName(generated)), "Piper failure cleanup");
-    await Throws<TimeoutException>(() => service.SynthesizeAsync("timeout"), "Piper timeout");
-    generated = await File.ReadAllTextAsync(pathRecord);
-    Check(!Directory.Exists(Path.GetDirectoryName(generated)), "Piper timeout cleanup");
-    using (var cts = new CancellationTokenSource(100))
-        await Throws<OperationCanceledException>(() => service.SynthesizeAsync("timeout", cts.Token), "Piper caller cancellation");
-    generated = await File.ReadAllTextAsync(pathRecord);
-    Check(!Directory.Exists(Path.GetDirectoryName(generated)), "Piper cancellation cleanup");
+    await PersistentPiperTests.RunAsync(root);
+    string generated;
 
     // Real ffmpeg fixture, fake Whisper: verifies actual decoded duration, not MIME metadata.
     var whisper = Path.Combine(root, "whisper");

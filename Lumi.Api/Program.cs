@@ -11,7 +11,8 @@ builder.Services.AddOptions<WhisperOptions>().BindConfiguration("Whisper")
         && o.MaxAudioBytes is > 0 and <= 10485760 && o.MaxDurationSeconds is > 0 and <= 60,
         "Configuração Whisper inválida.").ValidateOnStart();
 builder.Services.AddOptions<SpeechOptions>().BindConfiguration("Speech")
-    .Validate(o => !string.IsNullOrWhiteSpace(o.PiperExecutable) && !string.IsNullOrWhiteSpace(o.ModelPath)
+    .Validate(o => !string.IsNullOrWhiteSpace(o.PythonExecutable) && !string.IsNullOrWhiteSpace(o.ModelPath)
+        && !string.IsNullOrWhiteSpace(o.WorkerScript) && o.QueueCapacity is > 0 and <= 16
         && o.TimeoutSeconds is > 0 and <= 600 && o.MaxTextLength is > 0 and <= 4000,
         "Configuração Piper inválida.").ValidateOnStart();
 builder.WebHost.ConfigureKestrel(o => o.Limits.MaxRequestBodySize = 11 * 1024 * 1024);
@@ -26,7 +27,9 @@ builder.Services.AddRateLimiter(o =>
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddSingleton<TranscriptionService>();
-builder.Services.AddSingleton<ISpeechService, PiperSpeechService>();
+builder.Services.AddSingleton<PiperSpeechService>();
+builder.Services.AddSingleton<ISpeechService>(services => services.GetRequiredService<PiperSpeechService>());
+builder.Services.AddHostedService(services => services.GetRequiredService<PiperSpeechService>());
 builder.Services.AddHttpClient("Ollama", client =>
 {
     client.BaseAddress = new Uri(
@@ -163,7 +166,7 @@ app.MapPost("/audio/speak", async (
     );
 
     return Results.File(audio, "audio/wav");
-}).RequireRateLimiting("voice");
+});
 
 
 app.Run();

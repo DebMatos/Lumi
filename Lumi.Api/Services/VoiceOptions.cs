@@ -12,10 +12,12 @@ public sealed class WhisperOptions
 
 public sealed class SpeechOptions
 {
-    public string PiperExecutable { get; set; } = "";
+    public string PythonExecutable { get; set; } = "";
+    public string WorkerScript { get; set; } = "Speech/piper_worker.py";
     public string ModelPath { get; set; } = "";
     public int TimeoutSeconds { get; set; } = 60;
     public int MaxTextLength { get; set; } = 4000;
+    public int QueueCapacity { get; set; } = 3;
 }
 
 public static class VoiceValidation
