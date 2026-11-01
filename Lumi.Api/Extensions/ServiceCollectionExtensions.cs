@@ -33,6 +33,9 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<PiperSpeechService>();
         services.AddSingleton<ISpeechService>(services => services.GetRequiredService<PiperSpeechService>());
         services.AddHostedService(services => services.GetRequiredService<PiperSpeechService>());
+        services.AddSingleton<PcAudioService>();
+       services.AddHostedService<FollowUpBackgroundService>();
+       services.AddScoped<MicroActionService>();
         services.AddHttpClient("Ollama", client =>
         {
             client.BaseAddress = new Uri(

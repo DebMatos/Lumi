@@ -62,5 +62,6 @@ app.MapGet("/", () => "Lumi API está a funcionar!");
 
 app.MapChatEndpoints();
 app.MapAudioEndpoints();
+app.MapMicroActionEndpoints();
 
 app.Run();

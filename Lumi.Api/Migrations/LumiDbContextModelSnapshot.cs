@@ -62,6 +62,66 @@ namespace Lumi.Api.Migrations
                     b.ToTable("Messages");
                 });
 
+            modelBuilder.Entity("Lumi.Api.Models.MicroAction", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("StartedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("MicroActions");
+                });
+
+            modelBuilder.Entity("Lumi.Api.Models.MicroActionFollowUp", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("DeliveredAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("DueAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("IntervalMinutes")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("MicroActionId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MicroActionId");
+
+                    b.HasIndex("Status", "DueAt");
+
+                    b.ToTable("MicroActionFollowUps");
+                });
+
             modelBuilder.Entity("Lumi.Api.Models.Message", b =>
                 {
                     b.HasOne("Lumi.Api.Models.Conversation", "Conversation")
@@ -73,9 +133,25 @@ namespace Lumi.Api.Migrations
                     b.Navigation("Conversation");
                 });
 
+            modelBuilder.Entity("Lumi.Api.Models.MicroActionFollowUp", b =>
+                {
+                    b.HasOne("Lumi.Api.Models.MicroAction", "MicroAction")
+                        .WithMany("FollowUps")
+                        .HasForeignKey("MicroActionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("MicroAction");
+                });
+
             modelBuilder.Entity("Lumi.Api.Models.Conversation", b =>
                 {
                     b.Navigation("Messages");
+                });
+
+            modelBuilder.Entity("Lumi.Api.Models.MicroAction", b =>
+                {
+                    b.Navigation("FollowUps");
                 });
 #pragma warning restore 612, 618
         }

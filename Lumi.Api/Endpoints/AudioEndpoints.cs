@@ -37,7 +37,6 @@ public static class AudioEndpoints
 
             return Results.File(audio, "audio/wav");
         });
-
         return app;
     }
 }
