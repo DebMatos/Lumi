@@ -27,8 +27,8 @@ async function synth(h, index = 0) {
 function segment(h,text,final=false) {
   return JSON.parse(vm.runInContext(`JSON.stringify(speechSegments(${JSON.stringify(text)},${final}))`,h.context));
 }
-test('sentence boundaries protect Portuguese abbreviations, initials, numbers, URLs and quotes',()=>{
-  const h=setup();
+test('sentence boundaries protect Portuguese abbreviations, initials, numbers, URLs and quotes',async()=>{
+  const h=await setup();
   const cases=[
     ['O Sr. Silva falou com a Dra. Ana. Tudo bem?', ['O Sr. Silva falou com a Dra. Ana.','Tudo bem?']],
     ['O preço é 3.14 euros. Certo!', ['O preço é 3.14 euros.','Certo!']],
@@ -43,8 +43,8 @@ test('sentence boundaries protect Portuguese abbreviations, initials, numbers, U
   ];
   for (const [text, expected] of cases) assert.deepEqual(segment(h,text,true).sentences,expected,text);
 });
-test('chunk boundaries never duplicate or lose sentences, punctuation or Unicode',()=>{
-  const h=setup();
+test('chunk boundaries never duplicate or lose sentences, punctuation or Unicode',async()=>{
+  const h=await setup();
   const text='A Dra. Ana pagou 3.14 euros. “Certo?!” Sim... vamos avançar. Olá 🌞';
   const expected=['A Dra. Ana pagou 3.14 euros.','“Certo?!”','Sim... vamos avançar.','Olá 🌞'];
   for(let cut=0;cut<=text.length;cut++) {
@@ -58,7 +58,7 @@ test('chunk boundaries never duplicate or lose sentences, punctuation or Unicode
   assert.deepEqual(sentences,expected);
 });
 test('first sentence speaks before end; next is prepared with one request and one Blob ahead',async()=>{
-  const h=setup(),stream=await liveChat(h);
+  const h=await setup(),stream=await liveChat(h);
   await stream.chunk('Primeira frase. ');
   assert.deepEqual(texts(h),['Primeira frase.']);
   await synth(h);
@@ -82,7 +82,7 @@ test('first sentence speaks before end; next is prepared with one request and on
 });
 test('cancel stops playback, aborts next synthesis, and silences the rest of the streaming response',async()=>{
   for (const action of ['#stopSpeech','#voiceToggle','#newChat']) {
-    const h=setup(),stream=await liveChat(h);
+    const h=await setup(),stream=await liveChat(h);
     await stream.chunk('Primeira. Segunda. ');await synth(h);
     const pending=speechRequests(h)[1];assert.ok(pending);
     h.get(action).fire('click');
@@ -95,30 +95,30 @@ test('cancel stops playback, aborts next synthesis, and silences the rest of the
   }
 });
 test('cancel discards prepared audio and late Blob completion',async()=>{
-  const h=setup(),stream=await liveChat(h);
+  const h=await setup(),stream=await liveChat(h);
   await stream.chunk('Primeira. Segunda. Terceira. ');await synth(h);await synth(h,1);
   h.get('#stopSpeech').fire('click');await stream.end();
   assert.equal(h.audios.length,1);assert.equal(h.revoked.length,1);
-  const other=setup(),another=await liveChat(other);
+  const other=await setup(),another=await liveChat(other);
   await another.chunk('Olá. ');
   const body=deferred();speechRequests(other)[0].resolve({ok:true,blob:()=>body.promise});await flush();
   other.get('#newChat').fire('click');body.resolve(new Blob(['old']));await flush();
   await another.end();assert.equal(other.audios.length,0);
 });
 test('short final remainder is synthesized exactly once, silent responses do not make requests',async()=>{
-  const h=setup(),stream=await liveChat(h);
+  const h=await setup(),stream=await liveChat(h);
   await stream.chunk('Olá');assert.equal(speechRequests(h).length,0);
   await stream.end();assert.deepEqual(texts(h),['Olá']);await synth(h);h.audios[0].onended();
-  const empty=setup(),emptyStream=await liveChat(empty);await emptyStream.end();assert.equal(speechRequests(empty).length,0);
+  const empty=await setup(),emptyStream=await liveChat(empty);await emptyStream.end();assert.equal(speechRequests(empty).length,0);
 });
-test('long unpunctuated text respects the endpoint limit without cutting surrogate pairs',()=>{
-  const h=setup(),text=('palavra 🌞 ').repeat(1000);
+test('long unpunctuated text respects the endpoint limit without cutting surrogate pairs',async()=>{
+  const h=await setup(),text=('palavra 🌞 ').repeat(1000);
   const result=segment(h,text,true);assert.ok(result.sentences.length>1);
   assert.ok(result.sentences.every(s=>s.length<=4000 && !/[\uD800-\uDBFF]$/.test(s) && !/^[\uDC00-\uDFFF]/.test(s)));
   assert.equal(result.sentences.join(' '),text.trim());
 });
 test('synthesis failure does not block text streaming or repeatedly retry later sentences',async()=>{
-  const h=setup(),stream=await liveChat(h);
+  const h=await setup(),stream=await liveChat(h);
   await stream.chunk('Primeira. ');speechRequests(h)[0].resolve({ok:false,status:503});await flush();
   await stream.chunk('Segunda. ');await stream.end();
   assert.equal(h.get('#messages').children.at(-1).textContent,'Primeira. Segunda. ');
@@ -126,18 +126,18 @@ test('synthesis failure does not block text streaming or repeatedly retry later 
   assert.equal(h.get('#sendButton').disabled,false);
 });
 test('failed streaming cancels its queued and playing audio',async()=>{
-  const h=setup(),stream=await liveChat(h);
+  const h=await setup(),stream=await liveChat(h);
   await stream.chunk('Primeira. Segunda. ');await synth(h);await stream.fail();
   assert.equal(h.audios[0].paused,true);assert.equal(speechRequests(h)[1].options.signal.aborted,true);
 });
 test('busy server retry is bounded and abortable',async()=>{
-  const h=setup(),stream=await liveChat(h);
+  const h=await setup(),stream=await liveChat(h);
   await stream.chunk('Primeira. ');speechRequests(h)[0].resolve({ok:false,status:429});await flush();
   h.get('#stopSpeech').fire('click');await new Promise(resolve=>setTimeout(resolve,180));
   await stream.end();assert.equal(speechRequests(h).length,1);assert.equal(h.get('#error').textContent,'');
 });
 test('long response drains all sentences in order with bounded preparation',async()=>{
-  const h=setup(),stream=await liveChat(h);
+  const h=await setup(),stream=await liveChat(h);
   const expected=Array.from({length:40},(_,i)=>`Frase número ${i+1}!`);
   await stream.chunk(expected.join(' ')+' ');await stream.end();
   for(let index=0;index<expected.length;index++) {
@@ -151,7 +151,7 @@ test('long response drains all sentences in order with bounded preparation',asyn
   assert.equal(h.get('#status').textContent,'Inativo');
 });
 test('server contention retries the same sentence and stops after four attempts',async()=>{
-  const h=setup(),stream=await liveChat(h);await stream.chunk('Olá. ');await stream.end();
+  const h=await setup(),stream=await liveChat(h);await stream.chunk('Olá. ');await stream.end();
   for(let index=0;index<4;index++) {
     assert.equal(texts(h)[index],'Olá.');
     speechRequests(h)[index].resolve({ok:false,status:429});
@@ -161,13 +161,13 @@ test('server contention retries the same sentence and stops after four attempts'
   assert.match(h.get('#error').textContent,/Não foi possível/);
 });
 test('voice off before the first sentence suppresses future chunks even when re-enabled',async()=>{
-  const h=setup(),stream=await liveChat(h);await stream.chunk('Ainda sem ponto');
+  const h=await setup(),stream=await liveChat(h);await stream.chunk('Ainda sem ponto');
   h.get('#voiceToggle').fire('click');h.get('#voiceToggle').fire('click');
   await stream.chunk('. Outra frase. ');await stream.end();
   assert.equal(speechRequests(h).length,0);assert.equal(h.audios.length,0);
 });
 test('transient contention retries the same sentence without losing order',async()=>{
-  const h=setup(),stream=await liveChat(h);await stream.chunk('Primeira. Segunda. ');
+  const h=await setup(),stream=await liveChat(h);await stream.chunk('Primeira. Segunda. ');
   speechRequests(h)[0].resolve({ok:false,status:429});
   await new Promise(resolve=>setTimeout(resolve,180));
   assert.deepEqual(texts(h),['Primeira.','Primeira.']);

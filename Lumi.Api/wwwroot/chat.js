@@ -13,12 +13,19 @@ let voiceEnabled = false;
 let capture = null;
 let speech = null;
 let chat = null;
-let sessionId = sessionStorage.getItem("lumi-session") || crypto.randomUUID();
-sessionStorage.setItem("lumi-session", sessionId);
+let historyLoad = null;
+let sessionId =
+  localStorage.getItem("lumi-session") ||
+  sessionStorage.getItem("lumi-session") ||
+  crypto.randomUUID();
+
+localStorage.setItem("lumi-session", sessionId);
+sessionStorage.removeItem("lumi-session");
 
 // Independent jobs can coexist: speaking never disables writing or submitting.
 function render() {
   const states = [];
+  if (historyLoad) states.push("A carregar histórico");
   if (capture) states.push(capture.state);
   if (chat) states.push("A gerar resposta");
   if (speech?.audio) states.push("A falar");
@@ -26,8 +33,8 @@ function render() {
   status.textContent = states.join(" · ") || "Inativo";
   status.hidden = states.length === 0;
   stopButton.hidden = !speech?.audio;
-  sendButton.disabled = !!chat || !!capture;
-  micButton.disabled = !!chat || (!!capture && capture.state !== "A gravar");
+  sendButton.disabled = !!historyLoad || !!chat || !!capture;
+  micButton.disabled = !!historyLoad || !!chat || (!!capture && capture.state !== "A gravar");
   micButton.textContent = capture?.state === "A gravar" ? "Terminar gravação" : "🎙️";
   micButton.setAttribute("aria-label", capture?.state === "A gravar" ? "Terminar gravação" : "Gravar áudio");
   cancelButton.disabled = !capture;
@@ -118,7 +125,7 @@ async function transcribe(job) {
   }
 }
 micButton.addEventListener("click", async () => {
-  if (chat) return;
+  if (historyLoad || chat) return;
   if (capture) {
     if (capture.state === "A gravar") {
       capture.state = "A transcrever";
@@ -183,7 +190,58 @@ function addMessage(content, role) {
   messages.appendChild(element);
   return element;
 }
+
+async function loadConversationHistory() {
+  if (historyLoad) return;
+  const job = { controller: new AbortController(), sessionId };
+  historyLoad = job;
+  render();
+
+  try {
+    const response = await fetch(
+      `/conversations/${job.sessionId}/messages`,
+      { signal: job.controller.signal }
+    );
+
+    // Uma conversa nova ainda não existe no SQLite.
+    if (response.status === 404) return;
+
+    if (!response.ok) {
+      throw new Error("Failed to load conversation history");
+    }
+
+    const history = await response.json();
+
+    // Evitar apresentar mensagens de outra sessão.
+    if (historyLoad !== job || sessionId !== job.sessionId) return;
+
+    messages.replaceChildren();
+
+    for (const item of history) {
+      if (item.role === "user" || item.role === "assistant") {
+        addMessage(
+          item.content,
+          item.role === "assistant" ? "lumi" : "user"
+        );
+      }
+    }
+
+    messages.lastElementChild?.scrollIntoView({
+      block: "end"
+    });
+  } catch (error) {
+    if (historyLoad === job && sessionId === job.sessionId && !job.controller.signal.aborted) {
+      showError("Não foi possível recuperar o histórico da conversa.");
+    }
+  } finally {
+    if (historyLoad === job) { historyLoad = null; render(); }
+  }
+}
+
 document.querySelector("#newChat").addEventListener("click", () => {
+  const oldHistory = historyLoad;
+  historyLoad = null;
+  oldHistory?.controller.abort();
   const oldChat = chat;
   chat = null;
   oldChat?.controller.abort();
@@ -191,16 +249,18 @@ document.querySelector("#newChat").addEventListener("click", () => {
   cancelCapture();
   stopSpeech();
   sessionId = crypto.randomUUID();
-  sessionStorage.setItem("lumi-session", sessionId);
+  localStorage.setItem("lumi-session", sessionId);
+  sessionStorage.removeItem("lumi-session");
   messages.replaceChildren();
   // Keep the draft; late completions may not change this session or its UI.
   showError("");
   render();
   input.focus();
 });
+
 form.addEventListener("submit", async event => {
   event.preventDefault();
-  if (chat || capture || event.isComposing) return;
+  if (historyLoad || chat || capture || event.isComposing) return;
   const message = input.value.trim();
   if (!message) { showError("Escreve uma mensagem antes de enviar."); input.focus(); return; }
   showError("");
@@ -396,5 +456,7 @@ async function prepareSpeech(job) {
     }
   }
 }
-window.addEventListener("pagehide", () => { cancelCapture(); stopSpeech(); chat?.controller.abort(); });
+window.addEventListener("pagehide", () => { historyLoad?.controller.abort(); cancelCapture(); stopSpeech(); chat?.controller.abort(); });
 render();
+
+loadConversationHistory();

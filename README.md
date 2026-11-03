@@ -39,6 +39,7 @@ Antes de expor a API na rede: autenticação e autorização (incluindo isolamen
 dotnet build Lumi.Api/Lumi.Api.csproj
 dotnet run --project tests/Lumi.Voice.Tests
 node tests/chat.test.cjs
+node tests/history.test.cjs
 node tests/incremental-voice.test.cjs
 PYTHONDONTWRITEBYTECODE=1 python3 tests/test_piper_worker.py
 node tests/voice_latency.cjs
@@ -50,6 +51,10 @@ python3 tests/http_smoke.py --browser
 O executável de testes .NET não requer um framework adicional. Testa limites, cancelamento antes/depois de spawn, descendentes, pipes, fila limitada/FIFO, reutilização, cancelamento e timeout na fila ou durante inferência, falhas de protocolo, reinício e encerramento do worker Piper simulado, e duração real com ffmpeg + Whisper simulado. Os testes Python exercitam o script real com uma classe PiperVoice simulada, incluindo carregamento único e delimitação binária. Casos de processo/fixtures requerem Linux e ffmpeg. Os testes JS usam DOM/MediaRecorder/Audio/fetch simulados; não substituem o navegador nem os modelos reais.
 
 Os testes HTTP iniciam a API e um Ollama simulado em portas loopback temporárias, sem usar os modelos instalados. A opção `--browser` requer `google-chrome` e Node 24: verifica DOM e reprodução de WAV no Chrome headless, com respostas de rede simuladas e autoplay permitido. O perfil temporário é removido; capturas de 320px e 1280px ficam em `/tmp/lumi-320.png` e `/tmp/lumi-1280.png`. O Chrome de teste usa `--no-sandbox` apenas para esta página local controlada; não usar este comando para navegar em sites externos.
+
+O harness JS mantém `localStorage` e `sessionStorage` separados e permite simular a reabertura do navegador partilhando apenas `localStorage`. Os testes HTTP e de latência real usam SQLite num diretório temporário, preparado pelas migrations existentes através do executável de testes .NET; a API arranca nesse diretório e mantém o content root original para configuração e ficheiros estáticos. Os três scripts Python que arrancam a API usam diretórios temporários, removidos após o encerramento, sem escrever na base de desenvolvimento.
+
+O teste HTTP exige 400 para um `sessionId` que não seja GUID. Os testes JS confirmam também que «Nova conversa» guarda o novo UUID em `localStorage`, mantendo-o ativo após recarregar a página ou reabrir o navegador, e preserva a migração anterior de `sessionStorage`.
 
 ## Testes manuais no navegador
 

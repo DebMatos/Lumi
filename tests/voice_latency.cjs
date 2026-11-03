@@ -7,7 +7,7 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function measure(sourcePath) {
   let firstPlay, resolvePlay;
   const played = new Promise(resolve => { resolvePlay = resolve; });
-  const h = setup({ sourcePath, onPlay: () => { firstPlay ??= performance.now(); resolvePlay(); } });
+  const h = await setup({ sourcePath, onPlay: () => { firstPlay ??= performance.now(); resolvePlay(); } });
   h.get('#voiceToggle').fire('click');
   h.get('#messageInput').value = 'Explica em três frases.';
   const start = performance.now();
