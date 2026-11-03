@@ -1,5 +1,6 @@
 using Lumi.Api.Endpoints;
 using Lumi.Api.Extensions;
+using Microsoft.AspNetCore.StaticFiles;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -57,7 +58,9 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.UseStaticFiles();
+var contentTypes = new FileExtensionContentTypeProvider();
+contentTypes.Mappings[".riv"] = "application/octet-stream";
+app.UseStaticFiles(new StaticFileOptions { ContentTypeProvider = contentTypes });
 app.MapGet("/", () => "Lumi API está a funcionar!");
 
 app.MapChatEndpoints();
