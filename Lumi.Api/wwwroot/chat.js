@@ -42,7 +42,15 @@ function render() {
   stopButton.disabled = !speech;
   voiceToggle.textContent = voiceEnabled ? "Voz ligada" : "Voz desligada";
   voiceToggle.setAttribute("aria-pressed", String(voiceEnabled));
+
+const mascotState =
+  capture?.state === "A gravar" ? "Listen" :
+  speech?.audio ? "Talk" :
+  "Idle";
+
+window.setMascotAnimation?.(mascotState);
 }
+
 function showError(message) { errorBox.textContent = message; }
 function releaseMicrophone(job) {
   clearTimeout(job.timer);
