@@ -9,7 +9,21 @@ const cancelButton = document.querySelector("#cancelCapture");
 const stopButton = document.querySelector("#stopSpeech");
 const status = document.querySelector("#status");
 const errorBox = document.querySelector("#error");
+const listenButton = document.querySelector("#listenButton");
+const liveModeButton = document.querySelector("#liveMode");
+const approvalModeButton = document.querySelector("#approvalMode");
+const modeHint = document.querySelector("#modeHint");
+const transcriptToggle = document.querySelector("#transcriptToggle");
+const textToggle = document.querySelector("#textToggle");
+const transcriptPanel = document.querySelector("#transcriptPanel");
+const textPanel = document.querySelector("#textPanel");
+const messageCount = document.querySelector("#messageCount");
 let voiceEnabled = false;
+let voiceMode = "live";
+let listenerStatus = { state: "stopped", running: false, revision: 0 };
+let listenerPoll = null;
+let listenerBusy = false;
+let listenerConversationRevision = 0;
 let capture = null;
 let speech = null;
 let chat = null;
@@ -22,30 +36,61 @@ let sessionId =
 localStorage.setItem("lumi-session", sessionId);
 sessionStorage.removeItem("lumi-session");
 
-// Independent jobs can coexist: speaking never disables writing or submitting.
+function liveListenerOwnsSession() {
+  return listenerBusy || listenerStatus.running;
+}
+
+// Playback can coexist with writing, but message generation is serialized per session.
 function render() {
   const states = [];
   if (historyLoad) states.push("A carregar histórico");
   if (capture) states.push(capture.state);
-  if (chat) states.push("A gerar resposta");
+  if (chat) states.push("A responder");
   if (speech?.audio) states.push("A falar");
-  else if (speech?.synthesizing || speech?.ready) states.push("A gerar áudio");
-  status.textContent = states.join(" · ") || "Inativo";
-  status.hidden = states.length === 0;
+  else if (speech?.synthesizing || speech?.ready) states.push("A responder");
+  const listenerLabels = {
+    starting: "A iniciar", listening: "À escuta", recording: "A gravar",
+    transcribing: "A transcrever", responding: "A responder",
+    speaking: "A falar", stopping: "A parar", stopped: "Parado", error: "Erro"
+  };
+  const browserState = states.at(-1) || "Parado";
+  status.textContent = states.length
+    ? browserState
+    : voiceMode === "live"
+      ? (listenerLabels[listenerStatus.state] || "Parado")
+      : browserState;
+  status.hidden = false;
+  document.body?.setAttribute("data-voice-state", voiceMode === "live" ? listenerStatus.state :
+    capture?.state === "A gravar" ? "recording" : speech?.audio ? "speaking" : "stopped");
   stopButton.hidden = !speech?.audio;
-  sendButton.disabled = !!historyLoad || !!chat || !!capture;
-  micButton.disabled = !!historyLoad || !!chat || (!!capture && capture.state !== "A gravar");
+  const liveConversationActive = liveListenerOwnsSession();
+  sendButton.disabled = !!historyLoad || !!chat || !!capture || liveConversationActive;
+  micButton.disabled = !!historyLoad || !!chat || liveConversationActive
+    || (!!capture && capture.state !== "A gravar");
   micButton.textContent = capture?.state === "A gravar" ? "Terminar gravação" : "🎙️";
   micButton.setAttribute("aria-label", capture?.state === "A gravar" ? "Terminar gravação" : "Gravar áudio");
   cancelButton.disabled = !capture;
   cancelButton.textContent = capture?.state === "A transcrever" ? "Cancelar transcrição" : "Cancelar gravação";
   stopButton.disabled = !speech;
-  voiceToggle.textContent = voiceEnabled ? "Voz ligada" : "Voz desligada";
+  voiceToggle.textContent = voiceEnabled ? "Resposta falada" : "Resposta silenciosa";
   voiceToggle.setAttribute("aria-pressed", String(voiceEnabled));
+  liveModeButton.setAttribute("aria-pressed", String(voiceMode === "live"));
+  approvalModeButton.setAttribute("aria-pressed", String(voiceMode === "approval"));
+  listenButton.setAttribute("aria-pressed", String(voiceMode === "live" && listenerStatus.running));
+  listenButton.disabled = listenerBusy || !!historyLoad || !!chat
+    || (!!capture && capture.state !== "A gravar");
+  listenButton.textContent = voiceMode === "live"
+    ? (listenerStatus.running ? "Parar escuta" : "Iniciar escuta")
+    : (capture?.state === "A gravar" ? "Terminar gravação" : "Gravar mensagem");
+  modeHint.textContent = voiceMode === "live"
+    ? "Deteta o fim da fala e envia automaticamente."
+    : "A transcrição fica editável e só é enviada quando confirmares.";
+  messageCount.textContent = messages.children.length
+    ? `${messages.children.length} ${messages.children.length === 1 ? "mensagem" : "mensagens"}` : "";
 
 const mascotState =
-  capture?.state === "A gravar" ? "Listen" :
-  speech?.audio ? "Talk" :
+  capture?.state === "A gravar" || listenerStatus.state === "recording" || listenerStatus.state === "listening" ? "Listen" :
+  speech?.audio || listenerStatus.state === "speaking" ? "Talk" :
   "Idle";
 
 window.setMascotAnimation?.(mascotState);
@@ -103,6 +148,91 @@ voiceToggle.addEventListener("click", () => {
 stopButton.addEventListener("click", stopSpeech);
 cancelButton.addEventListener("click", cancelCapture);
 
+function togglePanel(button, panel) {
+  const open = panel.hidden;
+  panel.hidden = !open;
+  button.setAttribute("aria-expanded", String(open));
+  if (open) panel.querySelector?.("textarea, [tabindex]")?.focus();
+}
+transcriptToggle.addEventListener("click", () => togglePanel(transcriptToggle, transcriptPanel));
+textToggle.addEventListener("click", () => togglePanel(textToggle, textPanel));
+
+async function readListenerStatus() {
+  try {
+    const response = await fetch("/voice-listener/status");
+    if (!response.ok) throw new Error("status failed");
+    const next = await response.json();
+    const changed = next.revision !== listenerStatus.revision;
+    listenerStatus = next;
+    if (next.running && next.sessionId && next.sessionId !== sessionId) {
+      showError("A escuta ativa pertence a outra conversa. Para-a antes de continuar nesta sessão.");
+    }
+    if (next.error) showError(next.error);
+    if (next.reply && next.conversationRevision !== listenerConversationRevision) {
+      listenerConversationRevision = next.conversationRevision;
+      await loadConversationHistory();
+    }
+    render();
+    if (next.running) scheduleListenerPoll();
+    else if (changed && next.state === "error") showError(next.error || "O VoiceListener terminou inesperadamente.");
+  } catch (error) {
+    const retry = listenerStatus.running;
+    listenerStatus = { ...listenerStatus, state: "error", running: retry };
+    showError("Não foi possível consultar o estado da escuta.");
+    render();
+    if (retry) scheduleListenerPoll();
+  }
+}
+function scheduleListenerPoll() {
+  clearTimeout(listenerPoll);
+  listenerPoll = setTimeout(() => { void readListenerStatus(); }, 800);
+}
+async function startLiveListener() {
+  if (historyLoad || chat || capture || listenerBusy) return;
+  listenerBusy = true;
+  showError("");
+  render();
+  try {
+    const response = await fetch("/voice-listener/start", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId })
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "start failed");
+    listenerStatus = result;
+    scheduleListenerPoll();
+  } catch (error) {
+    listenerStatus = { ...listenerStatus, state: "error", running: false };
+    showError(error.message === "start failed" ? "Não foi possível iniciar a escuta." : error.message);
+  } finally { listenerBusy = false; render(); }
+}
+async function stopLiveListener() {
+  clearTimeout(listenerPoll);
+  if (!listenerStatus.running) return;
+  listenerBusy = true;
+  render();
+  try {
+    const response = await fetch("/voice-listener/stop", { method: "POST" });
+    if (!response.ok) throw new Error("stop failed");
+    listenerStatus = await response.json();
+  } catch (error) {
+    showError("Não foi possível parar a escuta com segurança.");
+  } finally { listenerBusy = false; render(); }
+}
+listenButton.addEventListener("click", () => {
+  if (voiceMode === "approval") {
+    if (textPanel.hidden) togglePanel(textToggle, textPanel);
+    return micButton.click();
+  }
+  void (listenerStatus.running ? stopLiveListener() : startLiveListener());
+});
+liveModeButton.addEventListener("click", () => { voiceMode = "live"; cancelCapture(); render(); });
+approvalModeButton.addEventListener("click", () => {
+  voiceMode = "approval";
+  void stopLiveListener();
+  render();
+});
+
 async function transcribe(job) {
   releaseMicrophone(job);
   if (capture !== job) return;
@@ -134,6 +264,16 @@ async function transcribe(job) {
 }
 micButton.addEventListener("click", async () => {
   if (historyLoad || chat) return;
+  if (liveListenerOwnsSession()) {
+    showError("Para a escuta ao vivo antes de gravar uma mensagem com aprovação.");
+    render();
+    return;
+  }
+  if (voiceMode !== "approval") {
+    voiceMode = "approval";
+    void stopLiveListener();
+    render();
+  }
   if (capture) {
     if (capture.state === "A gravar") {
       capture.state = "A transcrever";
@@ -247,6 +387,7 @@ async function loadConversationHistory() {
 }
 
 document.querySelector("#newChat").addEventListener("click", () => {
+  void stopLiveListener();
   const oldHistory = historyLoad;
   historyLoad = null;
   oldHistory?.controller.abort();
@@ -268,7 +409,13 @@ document.querySelector("#newChat").addEventListener("click", () => {
 
 form.addEventListener("submit", async event => {
   event.preventDefault();
-  if (historyLoad || chat || capture || event.isComposing) return;
+  if (event.isComposing) return;
+  if (liveListenerOwnsSession()) {
+    showError("Para a escuta ao vivo antes de enviar uma mensagem escrita.");
+    render();
+    return;
+  }
+  if (historyLoad || chat || capture) return;
   const message = input.value.trim();
   if (!message) { showError("Escreve uma mensagem antes de enviar."); input.focus(); return; }
   showError("");
@@ -464,7 +611,18 @@ async function prepareSpeech(job) {
     }
   }
 }
-window.addEventListener("pagehide", () => { historyLoad?.controller.abort(); cancelCapture(); stopSpeech(); chat?.controller.abort(); });
+window.addEventListener("pagehide", () => {
+  historyLoad?.controller.abort();
+  cancelCapture();
+  stopSpeech();
+  chat?.controller.abort();
+  clearTimeout(listenerPoll);
+  if (listenerStatus.running) navigator.sendBeacon?.("/voice-listener/stop");
+});
+["#newChat", "#liveMode", "#approvalMode", "#listenButton",
+  "#transcriptToggle", "#textToggle", "#voiceToggle", "#micButton"]
+  .forEach(selector => { document.querySelector(selector).disabled = false; });
 render();
 
 loadConversationHistory();
+void readListenerStatus();

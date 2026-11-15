@@ -126,6 +126,11 @@ with tempfile.TemporaryDirectory(prefix='lumi-http-') as temp:
             check(request(port, '/chat.html', method='GET')[0] == 200, 'HTML served')
             check(b'cancelCapture' in request(port, '/chat.html', method='GET')[2], 'new UI served')
             check(request(port, '/chat.js', method='GET')[0] == 200, 'JS served')
+            listener_status = request(port, '/voice-listener/status', method='GET')
+            check(listener_status[0] == 200 and json.loads(listener_status[2])['state'] == 'stopped',
+                  'managed listener status available')
+            check(json_post(port, '/voice-listener/start', {'sessionId': 'invalid'})[0] == 400,
+                  'managed listener rejects invalid session')
             result = json_post(port, '/chat', {'message': 'olá'})
             check(result[0] == 200 and json.loads(result[2])['reply'] == 'resposta de teste', '/chat compatible')
             session_id = str(uuid.uuid4())

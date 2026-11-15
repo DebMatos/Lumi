@@ -54,7 +54,7 @@ let ws;
       scriptOverride=fs.readFileSync(source,'utf8');
       await send('Page.navigate',{url:'about:blank'});
       await send('Page.navigate',{url:process.argv[2]});
-      await until('document.readyState === "complete" && document.querySelector("#status")?.textContent === "Inativo"');
+      await until('document.readyState === "complete" && document.querySelector("#status")?.textContent === "Parado"');
       await evaluate(`window.metrics={};
         const originalPlay=HTMLMediaElement.prototype.play;
         HTMLMediaElement.prototype.play=function(){this.addEventListener('playing',()=>{metrics.firstVoiceMs??=performance.now()-metrics.sentAt;},{once:true});return originalPlay.call(this);};
@@ -89,7 +89,51 @@ let ws;
     return;
   }
   await send('Page.navigate',{url:process.argv[2]});
-  await until('typeof prepareSpeech === "function" && document.querySelector("#status").textContent === "Inativo"');
+  await until('typeof prepareSpeech === "function" && document.querySelector("#status").textContent === "Parado"');
+  await send('Emulation.setDeviceMetricsOverride',{width:640,height:420,deviceScaleFactor:1,mobile:false});
+  await until('innerWidth === 640 && innerHeight === 420');
+  const layout = await evaluate(`(()=>{
+    const mascot=document.querySelector('#mascot-container');
+    const stage=document.querySelector('.mascot-stage');
+    const presence=document.querySelector('.presence');
+    const panels=document.querySelector('.conversation-panels');
+    const transcriptToggle=document.querySelector('#transcriptToggle');
+    const textToggle=document.querySelector('#textToggle');
+    const initiallyCollapsed=document.querySelector('#transcriptPanel').hidden&&document.querySelector('#textPanel').hidden;
+    transcriptToggle.click();textToggle.click();
+    const filler=[];
+    for(let i=0;i<12;i++){
+      const item=document.createElement('div');item.className='message lumi';item.textContent='Mensagem de teste '+i;
+      document.querySelector('#messages').appendChild(item);filler.push(item);
+    }
+    const before=stage.getBoundingClientRect();
+    const presenceBottom=presence.getBoundingClientRect().bottom;
+    const panelsTop=panels.getBoundingClientRect().top;
+    const lowerScrolls=panels.scrollHeight>panels.clientHeight;
+    panels.scrollTop=panels.scrollHeight;
+    const after=stage.getBoundingClientRect();
+    filler.forEach(item=>item.remove());
+    transcriptToggle.click();
+    const independent=document.querySelector('#transcriptPanel').hidden&&!document.querySelector('#textPanel').hidden;
+    textToggle.click();
+    return {
+      initiallyCollapsed,independent,
+      mascotPosition:getComputedStyle(mascot).position,
+      hasInlinePosition:Boolean(mascot.style.position||mascot.style.left||mascot.style.top),
+      resetControl:document.querySelector('#resetMascot')!==null,
+      noOverlap:panelsTop>=presenceBottom-1,
+      upperStayedPut:Math.abs(before.top-after.top)<0.5,
+      lowerScrolls,
+      mascotVisible:before.top>=0&&before.bottom<=presenceBottom,
+      noHorizontalOverflow:document.documentElement.scrollWidth<=innerWidth
+    };
+  })()`);
+  assert.deepEqual(layout,{
+    initiallyCollapsed:true,independent:true,mascotPosition:'relative',hasInlinePosition:false,
+    resetControl:false,noOverlap:true,upperStayedPut:true,lowerScrolls:true,mascotVisible:true,
+    noHorizontalOverflow:true
+  });
+  await send('Emulation.setDeviceMetricsOverride',{width:1280,height:800,deviceScaleFactor:1,mobile:false});
   // A real playable WAV, long enough to submit another message while it plays.
   const wav=Buffer.alloc(44+16000*2*5);wav.write('RIFF');wav.writeUInt32LE(wav.length-8,4);wav.write('WAVEfmt ',8);wav.writeUInt32LE(16,16);wav.writeUInt16LE(1,20);wav.writeUInt16LE(1,22);wav.writeUInt32LE(16000,24);wav.writeUInt32LE(32000,28);wav.writeUInt16LE(2,32);wav.writeUInt16LE(16,34);wav.write('data',36);wav.writeUInt32LE(wav.length-44,40);
   await evaluate(`window.fetch = async (url, options) => {
@@ -105,7 +149,7 @@ let ws;
   await evaluate('document.querySelector("#messageInput").value="outra"; document.querySelector("#sendButton").click()');
   await until('document.querySelectorAll(".lumi").length === 2 && document.querySelector("#status").textContent === "A falar"');
   await evaluate('document.querySelector("#voiceToggle").click()');
-  await until('document.querySelector("#status").textContent === "Inativo"');
+  await until('document.querySelector("#status").textContent === "Parado"');
   assert.equal(await evaluate('document.querySelector("#error").textContent'),'');
   await evaluate('document.querySelector("#messageInput").value="rascunho"; document.querySelector("#newChat").click()');
   assert.equal(await evaluate('document.querySelector("#messageInput").value'),'rascunho');
