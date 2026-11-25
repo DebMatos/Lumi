@@ -15,16 +15,20 @@ function createStorage() {
 async function setup({ sourcePath = "Lumi.Api/wwwroot/chat.js", onPlay = () => {}, pendingHistory = false,
   localStorage = createStorage(), sessionStorage = createStorage() } = {}) {
   class Element {
-    constructor() { this.value=''; this.textContent=''; this.disabled=false; this.children=[]; this.events={}; }
+    constructor() { this.value=''; this.textContent=''; this.disabled=false; this.hidden=false; this.children=[]; this.events={}; this.attributes={}; }
     addEventListener(name, fn) { this.events[name]=fn; }
-    setAttribute() {} focus() {} scrollIntoView() {}
+    setAttribute(name,value) { this.attributes[name]=String(value); } focus() { this.focused=true; } scrollIntoView() {}
+    querySelector() { return null; }
     appendChild(child) { this.children.push(child); }
     replaceChildren() { this.children=[]; }
     fire(name) { return this.events[name]?.({ preventDefault() {} }); }
+    click() { return this.fire('click'); }
   }
   const elements = {};
   const get = id => elements[id] ||= new Element();
-  const requests=[], historyRequests=[], audios=[], revoked=[], recorders=[], tracks=[];
+  get('#transcriptPanel').hidden=true;
+  get('#textPanel').hidden=true;
+  const requests=[], historyRequests=[], listenerRequests=[], audios=[], revoked=[], recorders=[], tracks=[];
   let permission;
   class Recorder {
     static isTypeSupported() { return true; }
@@ -34,7 +38,7 @@ async function setup({ sourcePath = "Lumi.Api/wwwroot/chat.js", onPlay = () => {
     stop() { this.state='inactive'; queueMicrotask(() => { this.events.dataavailable({ data: new Blob(['test']) }); this.events.stop(); }); }
   }
   const context = vm.createContext({
-    document: { querySelector:get, createElement:() => new Element() },
+    document: { querySelector:get, createElement:() => new Element(), body:new Element() },
     window: { addEventListener() {} },
     navigator: { mediaDevices: { getUserMedia: () => {
       if (permission) return permission.promise;
@@ -44,11 +48,16 @@ async function setup({ sourcePath = "Lumi.Api/wwwroot/chat.js", onPlay = () => {
     MediaRecorder:Recorder,
     localStorage, sessionStorage,
     crypto:{randomUUID:require('node:crypto').randomUUID},
-    fetch:(url, options) => {
+    fetch:(url, options={}) => {
       const d=deferred();
       if (url.startsWith('/conversations/')) {
         historyRequests.push({url,options,...d});
         if (!pendingHistory) d.resolve({ok:false,status:404});
+      } else if (url === '/voice-listener/status') {
+        listenerRequests.push({url,options,...d});
+        d.resolve({ok:true,json:async()=>({state:'stopped',running:false,revision:0})});
+      } else if (url.startsWith('/voice-listener/')) {
+        listenerRequests.push({url,options,...d});
       } else requests.push({url,options,...d});
       return d.promise;
     },
@@ -59,7 +68,7 @@ async function setup({ sourcePath = "Lumi.Api/wwwroot/chat.js", onPlay = () => {
   vm.runInContext(fs.readFileSync(sourcePath,'utf8'),context);
   // Let the default initial 404 settle before interaction-focused tests run.
   await new Promise(resolve => setImmediate(resolve));
-  return {get,requests,historyRequests,audios,revoked,recorders,tracks,context,localStorage,sessionStorage,setPermission:d=>permission=d};
+  return {get,requests,historyRequests,listenerRequests,audios,revoked,recorders,tracks,context,localStorage,sessionStorage,setPermission:d=>permission=d};
 }
 function streamed(text) {
   return {ok:true,body:{getReader(){let read=false;return {async read(){if(read)return{done:true};read=true;return{done:false,value:new TextEncoder().encode(text)};},releaseLock(){}};}}};

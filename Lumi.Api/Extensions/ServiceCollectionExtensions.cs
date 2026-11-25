@@ -19,6 +19,11 @@ public static class ServiceCollectionExtensions
                 && !string.IsNullOrWhiteSpace(o.WorkerScript) && o.QueueCapacity is > 0 and <= 16
                 && o.TimeoutSeconds is > 0 and <= 600 && o.MaxTextLength is > 0 and <= 4000,
                 "Configuração Piper inválida.").ValidateOnStart();
+        services.AddOptions<VoiceListenerOptions>().BindConfiguration("VoiceListener")
+            .Validate(o => !string.IsNullOrWhiteSpace(o.PythonExecutable)
+                && !string.IsNullOrWhiteSpace(o.Script)
+                && o.StopTimeoutSeconds is > 0 and <= 30,
+                "Configuração VoiceListener inválida.").ValidateOnStart();
         services.Configure<FormOptions>(o => o.MultipartBodyLengthLimit = 11 * 1024 * 1024);
         services.AddRateLimiter(o =>
         {
@@ -34,8 +39,10 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ISpeechService>(services => services.GetRequiredService<PiperSpeechService>());
         services.AddHostedService(services => services.GetRequiredService<PiperSpeechService>());
         services.AddSingleton<PcAudioService>();
-       services.AddHostedService<FollowUpBackgroundService>();
-       services.AddScoped<MicroActionService>();
+        services.AddSingleton<VoiceListenerManager>();
+        services.AddSingleton<ChatSessionCoordinator>();
+        services.AddHostedService<FollowUpBackgroundService>();
+        services.AddScoped<MicroActionService>();
         services.AddHttpClient("Ollama", client =>
         {
             client.BaseAddress = new Uri(

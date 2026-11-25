@@ -10,6 +10,27 @@ dotnet run --project Lumi.Api --launch-profile http
 
 Abrir `http://localhost:5194/chat.html`. Permitir microfone no navegador. Ligar «Voz desligada» para receber respostas faladas. «Terminar gravação» envia para transcrição; «Cancelar gravação/transcrição» descarta/aborta e conserva o rascunho. A transcrição acrescenta ao texto atual; não envia automaticamente. «Parar voz» interrompe reprodução ou síntese pendente sem desligar a preferência.
 
+### Listener contínuo no desktop
+
+`voice-listener/listener.py` oferece escuta contínua com Silero VAD fora do navegador. O processo só é responsável pelo microfone, deteção de voz e reprodução local: envia o WAV para `/audio/transcribe`, conversa através de `/chat/stream` e obtém o WAV da resposta em `/audio/speak`. Assim reutiliza o Whisper, Piper, limites e timeouts configurados na API. O UUID guardado em `~/.local/state/lumi/voice-listener-session` mantém a mesma conversa e o respetivo histórico SQLite entre execuções.
+
+Na interface web, o backend gere este processo no modo «Ao vivo» através de `POST /voice-listener/start`, `POST /voice-listener/stop` e `GET /voice-listener/status`. O processo recebe o UUID da sessão aberta no navegador, emite estados JSON no stdout e termina quando o backend fecha stdin. Uma segunda instância é recusada. `VoiceListener` em `appsettings.json` permite configurar o Python, script e timeout de encerramento. O modo «Com aprovação» continua a usar `MediaRecorder` no navegador e não inicia o processo Python.
+
+Com a API já em execução, instalar no ambiente Python do listener `numpy`, `sounddevice`, `torch` e `silero-vad`, garantir que `pw-play` está disponível e executar:
+
+```bash
+python3 voice-listener/listener.py
+```
+
+Neste checkout, `VoiceListener:PythonExecutable` aponta para `voice-listener/.venv/bin/python`. Usar Python 3.12, que tem suporte dos pacotes do listener:
+
+```bash
+/caminho/para/python3.12 -m venv voice-listener/.venv
+voice-listener/.venv/bin/python -m pip install -r voice-listener/requirements.txt
+```
+
+Por omissão usa `http://127.0.0.1:5194`. `LUMI_API_URL` permite escolher outra porta, mas o listener recusa endereços que não sejam loopback. O áudio captado continua a ser guardado em `/tmp/lumi-voice` para diagnóstico.
+
 `Lumi.Api/appsettings.json` configura `Whisper` e `Speech`. Os caminhos `~/Projetos/...` são exemplos de desenvolvimento, expandidos a partir do diretório pessoal. Ajustar executáveis e modelos à instalação; ffmpeg deve estar no PATH ou ter caminho absoluto. Piper requer também o ficheiro de configuração do modelo `.onnx.json`. `Speech:PythonExecutable` deve apontar para o Python do ambiente em que Piper está instalado. `Speech:WorkerScript` é relativo ao diretório dos binários (`Speech/piper_worker.py` por omissão), copiado também na publicação; pode ser um caminho absoluto. A antiga opção `Speech:PiperExecutable` foi substituída por `Speech:PythonExecutable`. É possível usar `appsettings.Development.json` (ignorado pelo Git) ou variáveis como `Whisper__Executable`, `Whisper__ModelPath`, `Speech__PythonExecutable`, `Speech__ModelPath`.
 
 Limites do servidor: upload até 10 MiB, duração descodificada até 60s, texto TTS até 4000 unidades UTF-16 por pedido. Os valores configuráveis podem reduzir estes limites. Limite HTTP/multipart de 11 MiB, incluindo overhead. Formatos aceites: WebM, Ogg, WAV, MP4 e MP3; o navegador escolhe WebM/Opus, Ogg/Opus ou MP4 consoante suporte. O conteúdo é realmente descodificado por ffmpeg, limitado a contentores permitidos, uma faixa mono PCM 16kHz e 61s no máximo para rejeitar excesso. Não se confia na extensão ou na duração declarada pelo cliente.
@@ -42,6 +63,7 @@ node tests/chat.test.cjs
 node tests/history.test.cjs
 node tests/incremental-voice.test.cjs
 PYTHONDONTWRITEBYTECODE=1 python3 tests/test_piper_worker.py
+PYTHONDONTWRITEBYTECODE=1 python3 tests/test_voice_listener.py
 node tests/voice_latency.cjs
 python3 tests/voice_pauses.py
 python3 tests/http_smoke.py
@@ -64,7 +86,7 @@ O teste HTTP exige 400 para um `sessionId` que não seja GUID. Os testes JS conf
 4. Iniciar nova conversa durante stream, gravação, transcrição, síntese e fala. Confirmar rascunho preservado, sessão nova e ausência de resultados antigos. Repetir rapidamente cancelar/iniciar.
 5. Recusar microfone; desligar/parar motores; testar ficheiro inválido, vazio, >10 MiB, >60s e texto enviado diretamente ao TTS >4000. Confirmar feedback, recuperação e ausência de detalhes internos em HTTP.
 6. Gravar até ao limite, confirmar paragem automática e tracks libertadas. Testar Chrome/Firefox e Safari conforme disponíveis (incluindo bloqueio de autoplay).
-7. Testar teclado, foco visível, leitor de ecrã para estados/erros e viewport de 320px/zoom de 200%. Verificar estados combinados, como «A gerar resposta · A falar».
+7. Testar teclado, foco visível, leitor de ecrã para estados/erros e viewport de 320px/zoom de 200%. Confirmar a progressão real entre «A responder» e «A falar».
 8. Confirmar que chamadas com Origin externo/Host inválido são rejeitadas e que continua a funcionar sem Origin em clientes locais como curl.
 
 Não há validação perceptiva automatizada da qualidade/pronúncia dos modelos. O cancelamento de chat usa o token existente e não reescreve o histórico do ChatService.

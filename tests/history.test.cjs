@@ -11,7 +11,7 @@ const displayed = h => h.get('#messages').children.map(element => [element.class
 function unlocked(h) {
   assert.equal(h.get('#sendButton').disabled, false);
   assert.equal(h.get('#micButton').disabled, false);
-  assert.equal(h.get('#status').textContent, 'Inativo');
+  assert.equal(h.get('#status').textContent, 'Parado');
 }
 
 test('initial history loads automatically, preserves the draft and unlocks controls', async () => {
@@ -103,7 +103,7 @@ test('new conversation aborts history and ignores late fetch, JSON and error com
     assert.deepEqual(displayed(h), [['message user', 'nova conversa'], ['message lumi', '']]);
     assert.equal(h.get('#error').textContent, '');
     assert.equal(h.get('#sendButton').disabled, true);
-    assert.equal(h.get('#status').textContent, 'A gerar resposta');
+    assert.equal(h.get('#status').textContent, 'A responder');
     h.requests[0].resolve(streamed('Resposta nova'));
     await done;
     unlocked(h);

@@ -63,7 +63,7 @@ test('first sentence speaks before end; next is prepared with one request and on
   assert.deepEqual(texts(h),['Primeira frase.']);
   await synth(h);
   assert.equal(h.audios.length,1);
-  assert.match(h.get('#status').textContent,/A gerar resposta · A falar/);
+  assert.match(h.get('#status').textContent,/A falar/);
   await stream.chunk('Segunda frase. Terceira frase. Restante');
   assert.deepEqual(texts(h),['Primeira frase.','Segunda frase.']);
   await synth(h,1);
@@ -78,7 +78,19 @@ test('first sentence speaks before end; next is prepared with one request and on
   assert.equal(h.audios.length,3);assert.equal(texts(h)[3],'Restante');
   await synth(h,3);h.audios[2].onended();await flush();
   assert.equal(h.audios.length,4);h.audios[3].onended();
-  assert.equal(h.get('#status').textContent,'Inativo');assert.equal(h.revoked.length,4);
+  assert.equal(h.get('#status').textContent,'Parado');assert.equal(h.revoked.length,4);
+});
+test('approval mode uses the same incremental playback after confirmation',async()=>{
+  const h=await setup();h.get('#approvalMode').fire('click');
+  const stream=await liveChat(h);
+  await stream.chunk('Primeira aprovada. ');
+  assert.deepEqual(texts(h),['Primeira aprovada.']);
+  await synth(h);assert.equal(h.audios.length,1);
+  await stream.chunk('Segunda aprovada. Restante');
+  assert.deepEqual(texts(h),['Primeira aprovada.','Segunda aprovada.']);
+  assert.equal(h.get('#sendButton').disabled,true,'generation is still active');
+  await stream.end();
+  h.get('#stopSpeech').fire('click');
 });
 test('cancel stops playback, aborts next synthesis, and silences the rest of the streaming response',async()=>{
   for (const action of ['#stopSpeech','#voiceToggle','#newChat']) {
@@ -148,7 +160,7 @@ test('long response drains all sentences in order with bounded preparation',asyn
     h.audios[index].onended();await flush();
   }
   assert.deepEqual(texts(h),expected);assert.equal(h.revoked.length,expected.length);
-  assert.equal(h.get('#status').textContent,'Inativo');
+  assert.equal(h.get('#status').textContent,'Parado');
 });
 test('server contention retries the same sentence and stops after four attempts',async()=>{
   const h=await setup(),stream=await liveChat(h);await stream.chunk('Olá. ');await stream.end();

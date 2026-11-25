@@ -4,6 +4,7 @@ using Lumi.Api.Data;
 using Lumi.Api.Services;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 // Prepare an isolated HTTP fixture using the application's existing migrations.
@@ -64,6 +65,38 @@ try
     }
     var output = await VoiceProcess.RunAsync("/bin/sh", ["-c", "head -c 100000 /dev/zero; head -c 100000 /dev/zero >&2"], null, default);
     Check(output.Length == 65536, "drain both pipes with bounded retention");
+
+    var listenerScript = Path.Combine(root, "fake-listener.py");
+    await File.WriteAllTextAsync(listenerScript,
+        "import json,sys,time\n" +
+        "print(json.dumps({'event':'state','state':'listening'}),flush=True)\n" +
+        "for line in sys.stdin: pass\n");
+    await using (var listener = new VoiceListenerManager(
+        Options.Create(new VoiceListenerOptions
+        {
+            PythonExecutable = "python3",
+            Script = listenerScript,
+            StopTimeoutSeconds = 2
+        }),
+        NullLogger<VoiceListenerManager>.Instance))
+    {
+        var listenerSession = Guid.NewGuid();
+        Check(await listener.StartAsync(listenerSession, "http://127.0.0.1:5194", default),
+            "managed listener starts");
+        Check(listener.Status.SessionId == listenerSession,
+            "managed listener reports the browser session");
+        Check(!await listener.StartAsync(Guid.NewGuid(), "http://127.0.0.1:5194", default),
+            "managed listener prevents duplicate instances");
+        for (var attempt = 0; attempt < 50 && listener.Status.State != "listening"; attempt++)
+            await Task.Delay(20);
+        Check(listener.Status is { State: "listening", Running: true },
+            "managed listener reports real state");
+        await listener.StopAsync(default);
+        Check(listener.Status is { State: "stopped", Running: false },
+            "managed listener stops on stdin close");
+    }
+
+    await ChatConcurrencyTests.RunAsync(root);
 
     await PersistentPiperTests.RunAsync(root);
     string generated;

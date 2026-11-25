@@ -1,0 +1,138 @@
+
+<!DOCTYPE html>
+<html lang="pt-PT">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Lumi - Teste Rive</title>
+
+  <style>
+    body {
+      margin: 0;
+      padding: 24px;
+      background: #171720;
+      color: white;
+      font-family: sans-serif;
+      text-align: center;
+    }
+
+    canvas {
+      width: 400px;
+      height: 400px;
+      max-width: 100%;
+    }
+
+    #animation-controls {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 8px;
+      max-width: 500px;
+      margin: 20px auto;
+    }
+
+    button {
+      padding: 10px 16px;
+      border: 1px solid #777;
+      border-radius: 8px;
+      background: #303040;
+      color: white;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background: #484860;
+    }
+
+    button.active {
+      border-color: #b9a1ff;
+      background: #554580;
+    }
+  </style>
+</head>
+
+<body>
+  <h2>Teste mascote Lumi</h2>
+
+  <canvas id="mascote" width="400" height="400"></canvas>
+
+  <h3>Animações</h3>
+  <div id="animation-controls"></div>
+
+  <p id="status">A carregar...</p>
+
+  <script src="https://unpkg.com/@rive-app/canvas"></script>
+
+  <script>
+    const animations = [
+      "Idle",
+      "Listen",
+      "Talk",
+      "Hello",
+      "Yes",
+      "NoBump",
+      "Bump",
+      "Shine",
+      "Sparkles",
+      "Blink"
+    ];
+
+    const controls = document.getElementById("animation-controls");
+    const status = document.getElementById("status");
+
+    let currentAnimation = "Idle";
+    let mascote;
+
+    function playAnimation(name) {
+      if (!mascote?.loaded) return;
+
+      mascote.stop();
+      mascote.play(name);
+
+      currentAnimation = name;
+      status.textContent = `Animação: ${name}`;
+
+      document.querySelectorAll("button").forEach(button => {
+        button.classList.toggle(
+          "active",
+          button.textContent === name
+        );
+      });
+    }
+
+    mascote = new rive.Rive({
+      src: "/assets/rive/mascote.riv",
+      canvas: document.getElementById("mascote"),
+      artboard: "SOBO-Motion-V01",
+      animations: "Idle",
+      autoplay: true,
+
+      onLoad: () => {
+        mascote.resizeDrawingSurfaceToCanvas();
+
+        console.log("Rive carregado!");
+        console.log("Animações disponíveis:", mascote.animationNames);
+
+        status.textContent = "Animação: Idle";
+        document.querySelector("button")?.classList.add("active");
+      },
+
+      onLoadError: (error) => {
+        console.error("Erro ao carregar Rive:", error);
+        status.textContent = "Erro ao carregar a mascote.";
+      }
+    });
+
+    animations.forEach(name => {
+      const button = document.createElement("button");
+      button.textContent = name;
+
+      button.addEventListener("click", () => {
+        playAnimation(name);
+      });
+
+      controls.appendChild(button);
+    });
+  </script>
+</body>
+</html>

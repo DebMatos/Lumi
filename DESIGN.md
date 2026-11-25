@@ -1,21 +1,24 @@
 ---
 colors:
-  background: "#20232a"
-  text: "#f5f5f5"
-  userMessage: "#354052"
-  lumiMessage: "#31483e"
+  background: "#171b21"
+  surface: "#1d232b"
+  text: "#f3f5f4"
+  userMessage: "#303c4c"
+  lumiMessage: "#293d36"
+  accent: "#a8d8b9"
   error: "#ffb4ab"
   focus: "#91caff"
 typography:
   body:
-    fontFamily: "system-ui, sans-serif"
+    fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif"
 spacing:
   controlGap: "8px"
   messageGap: "12px"
   pagePadding: "16px"
 rounded:
-  message: "12px"
-  input: "8px"
+  message: "15px"
+  input: "14px"
+  panel: "22px"
 omitted:
   - section: shadows
     reason: "A interface existente não usa elevação."
@@ -23,8 +26,8 @@ omitted:
 
 # Lumi — contexto visual
 
-Ferramenta pessoal de conversa em pt-PT. Preservar a página escura existente, mensagens discretas em azul/cinza e verde e controlos nativos. Não introduzir uma página de marketing nem uma biblioteca de componentes.
+Ferramenta pessoal de conversa em pt-PT. A interface é uma presença de secretária: a mascote permanece ancorada na zona superior do módulo, ao lado do estado e dos controlos agrupados, enquanto os instrumentos de texto ficam recolhidos até serem pedidos. Preservar a base escura, mensagens discretas em azul/cinza e verde e controlos nativos. Não introduzir uma página de marketing nem uma biblioteca de componentes.
 
-O CSS em `Lumi.Api/wwwroot/chat.css` implementa os valores acima. Estrutura de conversação com altura de viewport dinâmica, largura máxima de 960px, cabeçalho compacto e compositor inferior sempre visíveis. Apenas a área de mensagens tem deslocação independente. O formulário adapta-se a ecrãs estreitos. Tipografia de sistema para títulos, conteúdo e controlos; sem fontes externas ou animações.
+O CSS em `Lumi.Api/wwwroot/chat.css` é a fonte runtime dos valores acima. A assinatura visual é o halo discreto em torno da mascote, que reage apenas através dos estados Rive já existentes. A página usa uma coluna central até 1080px; a zona superior não participa no scroll e a região inferior é o contentor expansível dos painéis independentes de transcrição e escrita, ambos recolhidos inicialmente. A mascote reduz de escala em larguras e alturas pequenas, mas permanece sempre no fluxo. A tipografia mantém fallbacks de sistema e não depende de fontes externas.
 
-Feedback textual, foco visível e estados desativados comunicam as ações disponíveis. O estado surge discretamente apenas durante atividade. O cancelamento fica junto ao campo durante captura/transcrição; parar voz surge durante reprodução. A área de atividade reserva uma linha para evitar saltos no campo. Scrollbars pertencem à área de mensagens. Só existe este ecrã; não há um fluxo irmão para comparar.
+Feedback textual, foco visível e estados desativados comunicam as ações disponíveis. O estado real está sempre visível: parado, escuta, gravação, transcrição, resposta, fala ou erro. O controlo principal não inicia o microfone sem ação explícita. Scrollbars são globais e permanecem visíveis. O modo ao vivo e o modo com aprovação partilham sessão e transcrição; a diferença é apenas o momento do envio. Só existe este ecrã; não há um fluxo irmão para comparar.

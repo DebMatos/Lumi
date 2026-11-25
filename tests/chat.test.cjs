@@ -5,9 +5,127 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
 test('HTML wires the tested script and controls', () => {
   const html = fs.readFileSync('Lumi.Api/wwwroot/chat.html', 'utf8');
   assert.match(html, /<script src="\/chat.js" defer><\/script>/);
-  for (const id of ['sendButton', 'cancelCapture', 'stopSpeech', 'status', 'error'])
+  for (const id of ['sendButton', 'cancelCapture', 'stopSpeech', 'status', 'error',
+    'listenButton', 'liveMode', 'approvalMode', 'transcriptPanel', 'textPanel'])
     assert.ok(html.includes(`id="${id}"`), id);
   assert.match(html, /<form[^>]*novalidate/);
+});
+test('voice-first panels are collapsed and mode changes preserve the session', async () => {
+  const h = await setup();
+  const session = h.localStorage.getItem('lumi-session');
+  assert.equal(h.get('#transcriptPanel').hidden, true);
+  assert.equal(h.get('#textPanel').hidden, true);
+  h.get('#transcriptToggle').fire('click');
+  h.get('#textToggle').fire('click');
+  assert.equal(h.get('#transcriptPanel').hidden, false);
+  assert.equal(h.get('#textPanel').hidden, false);
+  assert.equal(h.get('#transcriptToggle').attributes['aria-expanded'], 'true');
+  assert.equal(h.get('#textToggle').attributes['aria-expanded'], 'true');
+  h.get('#transcriptToggle').fire('click');
+  assert.equal(h.get('#transcriptPanel').hidden, true);
+  assert.equal(h.get('#textPanel').hidden, false);
+  assert.equal(h.get('#transcriptToggle').attributes['aria-expanded'], 'false');
+  h.get('#textToggle').fire('click');
+  assert.equal(h.get('#textPanel').hidden, true);
+  h.get('#approvalMode').fire('click');
+  h.get('#liveMode').fire('click');
+  assert.equal(h.localStorage.getItem('lumi-session'), session);
+});
+test('live mode starts and stops the managed listener with the current session', async () => {
+  const h = await setup();
+  h.get('#listenButton').fire('click');
+  await flush();
+  const start = h.listenerRequests.find(request => request.url === '/voice-listener/start');
+  assert.ok(start);
+  assert.equal(JSON.parse(start.options.body).sessionId, h.localStorage.getItem('lumi-session'));
+  start.resolve({ok:true,json:async()=>({state:'listening',running:true,revision:1})});
+  await flush();
+  assert.equal(h.get('#status').textContent, 'À escuta');
+  assert.equal(h.get('#listenButton').textContent, 'Parar escuta');
+  h.get('#listenButton').fire('click');
+  await flush();
+  const stop = h.listenerRequests.find(request => request.url === '/voice-listener/stop');
+  assert.ok(stop);
+  stop.resolve({ok:true,json:async()=>({state:'stopped',running:false,revision:2})});
+  await flush();
+  assert.equal(h.get('#status').textContent, 'Parado');
+});
+test('live mode exposes start failure and permits recovery', async () => {
+  const h = await setup();
+  h.get('#listenButton').fire('click');
+  await flush();
+  const failed = h.listenerRequests.find(request => request.url === '/voice-listener/start');
+  failed.resolve({ok:false,json:async()=>({error:'Microfone indisponível.'})});
+  await flush();
+  assert.equal(h.get('#status').textContent, 'Erro');
+  assert.match(h.get('#error').textContent, /Microfone indisponível/);
+  assert.equal(h.get('#listenButton').disabled, false);
+
+  h.get('#listenButton').fire('click');
+  await flush();
+  const recovered = h.listenerRequests.filter(request => request.url === '/voice-listener/start')[1];
+  recovered.resolve({ok:true,json:async()=>({state:'listening',running:true,revision:2,conversationRevision:0})});
+  await flush();
+  assert.equal(h.get('#status').textContent, 'À escuta');
+  h.get('#listenButton').fire('click');
+  await flush();
+  h.listenerRequests.find(request => request.url === '/voice-listener/stop')
+    .resolve({ok:true,json:async()=>({state:'stopped',running:false,revision:3,conversationRevision:0})});
+  await flush();
+});
+test('live listener blocks text and approval capture without discarding the draft', async () => {
+  const h = await setup();
+  const sessionId = h.localStorage.getItem('lumi-session');
+  h.get('#listenButton').fire('click');
+  await flush();
+  const start = h.listenerRequests.find(request => request.url === '/voice-listener/start');
+  start.resolve({ok:true,json:async()=>({
+    state:'listening',running:true,revision:1,conversationRevision:0,sessionId
+  })});
+  await flush();
+
+  h.get('#messageInput').value = 'rascunho preservado';
+  assert.equal(h.get('#sendButton').disabled, true);
+  assert.equal(h.get('#micButton').disabled, true);
+  await h.get('#chatForm').fire('submit');
+  assert.equal(h.requests.filter(request => request.url === '/chat/stream').length, 0);
+  assert.equal(h.get('#messageInput').value, 'rascunho preservado');
+  assert.match(h.get('#error').textContent, /Para a escuta ao vivo/);
+
+  h.get('#approvalMode').fire('click');
+  await h.get('#micButton').fire('click');
+  assert.equal(h.tracks.length, 0);
+  const stop = h.listenerRequests.find(request => request.url === '/voice-listener/stop');
+  stop.resolve({ok:true,json:async()=>({
+    state:'stopped',running:false,revision:2,conversationRevision:0,sessionId
+  })});
+  await flush();
+  await h.get('#micButton').fire('click');
+  assert.equal(h.tracks.length, 1);
+  h.get('#cancelCapture').fire('click');
+});
+test('approval mode exposes editable transcription and sends only after confirmation', async () => {
+  const h = await setup();
+  h.get('#approvalMode').fire('click');
+  await h.get('#listenButton').fire('click');
+  assert.equal(h.get('#status').textContent, 'A gravar');
+  await h.get('#listenButton').fire('click');
+  await flush();
+  const transcription = h.requests.find(request => request.url === '/audio/transcribe');
+  assert.ok(transcription);
+  assert.equal(h.requests.filter(request => request.url === '/chat/stream').length, 0);
+  transcription.resolve({ok:true,json:async()=>({text:'mensagem falada'})});
+  await flush();
+  assert.equal(h.get('#messageInput').value, 'mensagem falada');
+  h.get('#messageInput').value = 'mensagem corrigida';
+  const sent = h.get('#chatForm').fire('submit');
+  const chatRequest = h.requests.find(request => request.url === '/chat/stream');
+  assert.deepEqual(JSON.parse(chatRequest.options.body), {
+    message: 'mensagem corrigida',
+    sessionId: h.localStorage.getItem('lumi-session')
+  });
+  chatRequest.resolve(streamed('Resposta'));
+  await sent;
 });
 const { setup, createStorage, deferred, streamed, reply } = require('./chat-harness.cjs');
 test('session ID persists after a new browser session with fresh sessionStorage', async () => {
@@ -79,7 +197,7 @@ test('cancel recording does not upload and keeps draft',async()=>{
   const h=await setup();h.get('#messageInput').value='rascunho';
   await h.get('#micButton').fire('click');h.get('#cancelCapture').fire('click');await flush();
   assert.equal(h.requests.length,0);assert.equal(h.tracks[0].stopped,true);
-  assert.equal(h.get('#messageInput').value,'rascunho');assert.equal(h.get('#status').textContent,'Inativo');
+  assert.equal(h.get('#messageInput').value,'rascunho');assert.equal(h.get('#status').textContent,'Parado');
 });
 test('cancel transcription aborts fetch and ignores late result',async()=>{
   const h=await setup();await h.get('#micButton').fire('click');await h.get('#micButton').fire('click');await flush();
@@ -94,12 +212,12 @@ test('successful transcription appends to current text',async()=>{
   assert.equal(h.get('#messageInput').value,'escrito entretanto voz');assert.equal(h.tracks[0].stopped,true);
 });
 test('new conversation invalidates old chat and preserves draft',async()=>{
-  const h=await setup();h.get('#voiceToggle').fire('click');h.get('#messageInput').value='pergunta';
+  const h=await setup();h.get('#messageInput').value='pergunta';
   const done=h.get('#chatForm').fire('submit');const old=h.requests[0];
   h.get('#messageInput').value='próxima';h.get('#newChat').fire('click');
   assert.equal(old.options.signal.aborted,true);old.resolve(streamed('antigo'));await done;
   assert.equal(h.get('#messages').children.length,0);assert.equal(h.requests.length,1);
-  assert.equal(h.get('#messageInput').value,'próxima');assert.equal(h.get('#status').textContent,'Inativo');
+  assert.equal(h.get('#messageInput').value,'próxima');assert.equal(h.get('#status').textContent,'Parado');
 });
 test('late microphone permission after cancel releases tracks',async()=>{
   const h=await setup(),d=deferred();h.setPermission(d);
@@ -110,7 +228,7 @@ test('late microphone permission after cancel releases tracks',async()=>{
 test('playback ended frees URL; synthesis errors preserve chat and unlock form',async()=>{
   const h=await setup();h.get('#voiceToggle').fire('click');await reply(h);
   h.requests.at(-1).resolve({ok:true,blob:async()=>new Blob(['wav'])});await flush();
-  h.audios[0].onended();assert.equal(h.revoked.length,1);assert.equal(h.get('#status').textContent,'Inativo');
+  h.audios[0].onended();assert.equal(h.revoked.length,1);assert.equal(h.get('#status').textContent,'Parado');
   await reply(h);h.requests.at(-1).resolve({ok:false});await flush();
   assert.match(h.get('#error').textContent,/Não foi possível/);assert.equal(h.get('#sendButton').disabled,false);
   assert.equal(h.get('#messages').children.at(-1).textContent,'Olá');
